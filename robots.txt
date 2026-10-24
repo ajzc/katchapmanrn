@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://katchapmanrn.com/sitemap.xml
+Sitemap: https://blog.katchapmanrn.com/sitemap.xml
