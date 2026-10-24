@@ -416,15 +416,23 @@ if (params.get("sent") === "1" && contactFormEl) {
   contactFormEl.replaceWith(ok);
 }
 
-/* Legacy pages without the static announcement bar get it injected.
-   Skip when the launch strip is already in the page so the homepage
-   guarantee hero stays the upper fold. */
-if (!document.querySelector(".announce") && !document.querySelector(".launch-strip")) {
-  const bar = document.createElement("div");
-  bar.className = "announce";
-  bar.innerHTML = '<a href="' + SITE_CONFIG.bookingUrl + '" target="_blank" rel="noopener">Book a visit with Kat. Every treatment is done under the supervision of a medical director &rarr;</a>';
-  document.body.prepend(bar);
-}
+/* Launch strip leads every public page. Measure it so the fixed nav
+   sits underneath instead of covering the offer. */
+(function () {
+  var strip = document.querySelector(".launch-strip");
+  if (!strip) {
+    strip = document.createElement("aside");
+    strip.className = "launch-strip";
+    strip.setAttribute("aria-label", "Launch pricing");
+    strip.innerHTML = '<div class="wrap launch-strip-inner"><p class="launch-strip-text">Launch pricing: 30% off all treatments through Dec 31.</p><a class="launch-strip-cta" data-book target="_blank" rel="noopener" href="' + SITE_CONFIG.bookingUrl + '">Book now</a></div>';
+    document.body.prepend(strip);
+  }
+  var sync = function () {
+    document.documentElement.style.setProperty("--launch-strip-h", strip.offsetHeight + "px");
+  };
+  sync();
+  window.addEventListener("resize", sync);
+})();
 
 /* Ensure Mobile & Concierge appears in the Services dropdown and footer
    on pages that don't have it statically yet. */
