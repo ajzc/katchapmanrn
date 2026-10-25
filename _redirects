@@ -1,0 +1,17 @@
+# Cloudflare Pages redirects for katchapmanrn.com.
+# Static rules first. Unknown paths 404 because /404.html exists.
+# Do not add a catch-all that serves the homepage for missing paths.
+#
+# www → apex and http → https stay zone-level. Trailing-slash 308s
+# for real HTML pages (/services/ → /services) are Pages' built-in
+# behavior and are left alone.
+
+# Former apex article URL. Live post is on the HubSpot journal.
+/is-botox-safe-for-first-timers      https://blog.katchapmanrn.com/blog/is-botox-safe-for-first-timers  301
+/is-botox-safe-for-first-timers/     https://blog.katchapmanrn.com/blog/is-botox-safe-for-first-timers  301
+/is-botox-safe-for-first-timers.html https://blog.katchapmanrn.com/blog/is-botox-safe-for-first-timers  301
+
+# Journal stays on the HubSpot subdomain for this deploy.
+/blog   https://blog.katchapmanrn.com/blog  301
+/blog/  https://blog.katchapmanrn.com/blog  301
+/blog/* https://blog.katchapmanrn.com/blog/:splat  301

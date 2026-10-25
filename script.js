@@ -38,7 +38,7 @@ const SITE_CONFIG = {
   bookingUrl: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn",
   phone: "(704) 584-9785",
   phoneHref: "tel:+17045849785",
-  email: "",      // no public mailbox published
+  email: "",      // unpublished on purpose; do not render mailto links
   address: "Canvas & Glow on Sam Furr Road in Huntersville",
   instagram: "https://www.instagram.com/kathrynshelton"
 };
@@ -60,15 +60,13 @@ document.querySelectorAll("[data-phone]").forEach(el => {
   el.href = SITE_CONFIG.phoneHref;
   if (el.dataset.phone === "text") el.textContent = SITE_CONFIG.phone;
 });
+/* Never emit mailto: links. Cloudflare Email Address Obfuscation
+   rewrites them into /cdn-cgi/l/email-protection, which Google indexes
+   as a 404. Drop any leftover data-email node instead. */
 document.querySelectorAll("[data-email]").forEach(el => {
-  if (!SITE_CONFIG.email) {
-    const li = el.closest("li") || el.closest(".info-item");
-    if (li) li.remove();
-    else el.remove();
-    return;
-  }
-  el.href = "mailto:" + SITE_CONFIG.email;
-  if (el.dataset.email === "text") el.textContent = SITE_CONFIG.email;
+  const li = el.closest("li") || el.closest(".info-item");
+  if (li) li.remove();
+  else el.remove();
 });
 document.querySelectorAll("[data-address]").forEach(el => (el.textContent = SITE_CONFIG.address));
 document.querySelectorAll("[data-instagram]").forEach(el => { el.href = SITE_CONFIG.instagram; el.target = "_blank"; el.rel = "noopener"; });
