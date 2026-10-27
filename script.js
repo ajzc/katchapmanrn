@@ -422,7 +422,7 @@ if (params.get("sent") === "1" && contactFormEl) {
     strip = document.createElement("aside");
     strip.className = "launch-strip";
     strip.setAttribute("aria-label", "Launch pricing");
-    strip.innerHTML = '<div class="wrap launch-strip-inner"><p class="launch-strip-text">Launch pricing: 30% off all treatments through Dec 31.</p><a class="launch-strip-cta" data-book target="_blank" rel="noopener" href="' + SITE_CONFIG.bookingUrl + '">Book now</a></div>';
+    strip.innerHTML = '<div class="wrap launch-strip-inner"><p class="launch-strip-text">Launch pricing: 30% off all treatments through Black Friday.</p><a class="launch-strip-cta" data-book target="_blank" rel="noopener" href="' + SITE_CONFIG.bookingUrl + '">Book now</a></div>';
     document.body.prepend(strip);
   }
   var sync = function () {
