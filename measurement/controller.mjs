@@ -1,6 +1,7 @@
 import { GA4_MEASUREMENT_ID, HS_PORTAL_ID, LINKER_DOMAINS, META_PIXEL_ID, CONSENT_STORAGE_KEY, UTM_STORAGE_KEY } from "./config.mjs";
 import { metaBootCommands, metaInstallPlan, metaTrackCommand, META_SCRIPT_URL } from "./meta.mjs";
 import { sanitizeHref, readAllowlistedUtms, mergeFirstTouch, appendUtms } from "./utm.mjs";
+import { metaAudienceAllowed } from "./redact.mjs";
 import { buildHubSpotContext } from "./forms.mjs";
 import { bookingSignalFromMessage, matchingIframeSrc } from "./booking.mjs";
 import { classifyClick, pageViewEvent, clickEvent, formEvent, bookingEvent } from "./events.mjs";
@@ -44,6 +45,7 @@ export function createController(deps) {
   let consent = "unset";
   let bannerOpen = true;
   let tagsLoaded = false;
+  let gaLoaded = false;
   let metaBooted = false;
   let utms = readJson(deps.session, UTM_STORAGE_KEY);
 
@@ -75,11 +77,12 @@ export function createController(deps) {
   }
 
   function emitGa(event) {
-    if (!event.ga || !deps.gtag) return;
+    if (!gaLoaded || !event.ga || !deps.gtag) return;
     deps.gtag("event", event.name, event.params || {});
   }
   function bootMeta() {
     if (!metaInstallPlan(pixelId, consent).load) return;
+    if (!metaAudienceAllowed(location())) return;
     if (metaBooted) {
       if (deps.fbq) deps.fbq("consent", "grant");
       return;
@@ -93,7 +96,7 @@ export function createController(deps) {
     deps.loadScript(META_SCRIPT_URL, { id: "kcrn-meta", referrerPolicy: "origin" });
   }
   function emitMeta(event) {
-    if (!event.meta) return;
+    if (!event.meta || !metaAudienceAllowed(location())) return;
     bootMeta();
     if (!deps.fbq) return;
     const command = metaTrackCommand(event.name, event.params);
@@ -117,33 +120,37 @@ export function createController(deps) {
 
   function loadTags() {
     const page = location();
-    const safe = pageViewEvent(page).params;
-    bootMeta();
+    const view = pageViewEvent(page);
+    if (metaAudienceAllowed(page)) bootMeta();
     if (!tagsLoaded) {
       tagsLoaded = true;
-      if (deps.ensureGtag) deps.ensureGtag();
-      deps.gtag("consent", "default", { ...DENIED, wait_for_update: 0 });
-      deps.gtag("set", "ads_data_redaction", true);
-      deps.gtag("set", "url_passthrough", false);
-      deps.gtag("set", "restricted_data_processing", true);
-      deps.loadScript("https://www.googletagmanager.com/gtag/js?id=" + GA4_MEASUREMENT_ID, {
-        id: "kcrn-ga",
-        referrerPolicy: "origin",
-      });
-      deps.gtag("js", deps.now ? deps.now() : new Date());
-      deps.gtag("consent", "update", { ...DENIED, analytics_storage: "granted" });
-      deps.gtag("config", GA4_MEASUREMENT_ID, {
-        send_page_view: false,
-        page_title: safe.page_title,
-        page_location: safe.page_location,
-        page_referrer: safe.page_referrer,
-        allow_google_signals: false,
-        allow_ad_personalization_signals: false,
-        anonymize_ip: true,
-        cookie_domain: ".katchapmanrn.com",
-        cookie_flags: "SameSite=Lax;Secure",
-        linker: { domains: LINKER_DOMAINS.slice(), accept_incoming: true },
-      });
+      if (view) {
+        gaLoaded = true;
+        const safe = view.params;
+        if (deps.ensureGtag) deps.ensureGtag();
+        deps.gtag("consent", "default", { ...DENIED, wait_for_update: 0 });
+        deps.gtag("set", "ads_data_redaction", true);
+        deps.gtag("set", "url_passthrough", false);
+        deps.gtag("set", "restricted_data_processing", true);
+        deps.loadScript("https://www.googletagmanager.com/gtag/js?id=" + GA4_MEASUREMENT_ID, {
+          id: "kcrn-ga",
+          referrerPolicy: "origin",
+        });
+        deps.gtag("js", deps.now ? deps.now() : new Date());
+        deps.gtag("consent", "update", { ...DENIED, analytics_storage: "granted" });
+        deps.gtag("config", GA4_MEASUREMENT_ID, {
+          send_page_view: false,
+          page_title: safe.page_title,
+          page_location: safe.page_location,
+          page_referrer: safe.page_referrer,
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+          anonymize_ip: true,
+          cookie_domain: ".katchapmanrn.com",
+          cookie_flags: "SameSite=Lax;Secure",
+          linker: { domains: LINKER_DOMAINS.slice(), accept_incoming: true },
+        });
+      }
       if (deps.hsp) {
         deps.hsp.push(["setHubSpotConsent", {
           analytics: true,
@@ -155,7 +162,7 @@ export function createController(deps) {
         id: "hs-script-loader",
         referrerPolicy: "origin",
       });
-    } else if (deps.gtag) {
+    } else if (gaLoaded && deps.gtag) {
       deps.gtag("consent", "update", { ...DENIED, analytics_storage: "granted" });
     }
   }
@@ -166,7 +173,8 @@ export function createController(deps) {
     persistConsent();
     publish();
     loadTags();
-    emit(pageViewEvent(location()));
+    const view = pageViewEvent(location());
+    if (view) emit(view);
   }
 
   sanitize();
@@ -204,7 +212,7 @@ export function createController(deps) {
       bannerOpen = false;
       persistConsent();
       once.clear();
-      if (tagsLoaded && deps.gtag) deps.gtag("consent", "update", { ...DENIED });
+      if (gaLoaded && deps.gtag) deps.gtag("consent", "update", { ...DENIED });
       if (tagsLoaded && deps.hsp) deps.hsp.push(["revokeCookieConsent"]);
       if (deps.fbq) deps.fbq("consent", "revoke");
       if (deps.clearMetaCookies) deps.clearMetaCookies();

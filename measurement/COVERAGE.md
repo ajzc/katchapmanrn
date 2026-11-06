@@ -8,7 +8,7 @@ The pixel, when an ID exists, loads on the real page. A hidden frame is not used
 
 | Action | HubSpot | GA4 `G-0BX0PK6GZP` | Meta |
 |---|---|---|---|
-| Allow, then a page view | Native page view of the real path and title. One view. | One `page_view`. `send_page_view` is false, so the tag does not add a second one. Parameters set here: `page_location` (real URL after contact query values are removed), `page_title`, `page_referrer`. | One `PageView` with no extra object. The pixel script then includes the real page URL and referrer in its own request. |
+| Allow, then a page view | Native page view of the real path and title, including treatment pages. One view. | One `page_view` only when the URL is not a treatment path. No stand-in URL is sent. A treatment referrer is cut back to the site origin. A title that names a treatment is not sent. | No request on a treatment URL, a treatment query, or a treatment referrer. Otherwise one `PageView` with no extra object. |
 | Call or text | `/track/call` or `/track/text`, then the path is restored | `outbound_click` with `link_kind` only | `OutboundClick` with `link_kind` only |
 | Book control to `/book` | The `/book` page view. No extra `/track/book`. | The `/book` page view. Not a booking. | The page view. Not `Schedule`. |
 | Direct scheduler link | `/track/book` intent only | `outbound_click` `link_kind=book`. Not a booking. | `OutboundClick`. Not `Schedule`. |

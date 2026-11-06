@@ -157,12 +157,12 @@ async function main() {
     check(earlyAds.length === 0, "ads hosts were requested before consent: " + earlyAds.join(", "));
 
     await evaluate("document.getElementById('kcrn-measure-allow').click()");
-    await waitFor("!!document.getElementById('kcrn-ga') && !!document.getElementById('hs-script-loader')");
+    await waitFor("!!document.getElementById('hs-script-loader')");
+    check(await evaluate("!document.getElementById('kcrn-ga')"), "treatment pages must not load Google");
     check(await evaluate("!document.querySelector('script[src*=\"facebook\"]')"), "Meta should stay unloaded without a pixel id");
-    check(!session.requests.some((url) => /facebook|fbevents/i.test(url)), "a Meta request was made without a pixel id");
+    check(!session.requests.some((url) => /facebook|fbevents|googletagmanager/i.test(url)), "an ad or analytics request was made from a treatment page");
     const layer = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
-    check(layer.includes("page_view"), "GA page_view should be queued");
-    check(layer.includes("/botox-huntersville"), "GA should record the real page path");
+    check(!layer.includes("botox"), "treatment path reached the Google queue");
     check(!layer.includes("patient@"), "GA queue included an email query value");
 
     await evaluate(`document.addEventListener('click', (event) => {

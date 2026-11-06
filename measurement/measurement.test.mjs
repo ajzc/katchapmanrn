@@ -160,64 +160,51 @@ test("consent gates tags and keeps the real page address", () => {
   assert.equal(env.hsq.length, 0);
 
   env.controller.grant();
-  assert.deepEqual(env.scripts, [
-    "https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP",
-    "https://js.hs-scripts.com/22023986.js",
-  ]);
-  assert.equal(env.scripts.some((src) => src.includes("facebook")), false);
-  const text = gaText(env.gtagCalls);
-  assert.match(text, /\/botox-huntersville/);
-  assert.match(text, /titleToken/i);
-  assert.equal(text.includes("patient@"), false);
-  assert.equal(text.includes("hutkvalue123"), false);
-  assert.equal(env.gtagCalls.filter((c) => c[0] === "event" && c[1] === "page_view").length, 1);
-  const update = env.gtagCalls.find((c) => c[0] === "consent" && c[1] === "update");
-  assert.equal(update[2].analytics_storage, "granted");
-  assert.equal(update[2].ad_storage, "denied");
-  assert.equal(update[2].ad_user_data, "denied");
-  const config = env.gtagCalls.find((c) => c[0] === "config");
-  assert.equal(config[2].send_page_view, false);
-  assert.equal(config[2].allow_google_signals, false);
-  assert.equal(config[2].allow_ad_personalization_signals, false);
-  assert.deepEqual(config[2].linker.domains, ["katchapmanrn.com", "blog.katchapmanrn.com"]);
-  assert.equal(JSON.stringify(config).includes("meetings.hubspot.com"), false);
-
-  env.controller.grant();
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "page_view").length, 1);
-
+  assert.deepEqual(env.scripts, ["https://js.hs-scripts.com/22023986.js"]);
+  assert.equal(env.gtagCalls.length, 0);
+  assert.equal(env.fbqCalls.length, 0);
   const booked = { href: anchor.href, hasAttribute: () => true, setAttribute(k, v) { this.href = v; } };
   env.controller.handleAnchor(booked);
   assert.equal(env.gtagCalls.filter((c) => c[1] === "booking_completed").length, 0);
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "generate_lead").length, 0);
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "outbound_click" && c[2].link_kind === "book").length, 1);
   assert.deepEqual(env.hsq.map((entry) => entry[0] === "setPath" ? entry[1] : entry[0]), [
     "/track/book", "trackPageView", "/botox-huntersville",
   ]);
-
   const context = env.controller.buildFormContext("Botox TITLETOKEN");
   assert.equal(context.hutk, "HUTKVALUE123");
   assert.equal(context.pageName, "Botox TITLETOKEN");
   assert.equal("pageUri" in context, false);
   assert.equal(env.controller.reportForm("contact", true), true);
-  assert.equal(env.controller.reportForm("contact", true), false);
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "generate_lead").length, 1);
+  assert.equal(env.gtagCalls.length, 0);
+});
+
+test("neutral pages can use Google without copying a treatment referrer", () => {
+  const env = setup({
+    location: {
+      href: "https://katchapmanrn.com/contact?utm_source=instagram",
+      pathname: "/contact",
+      search: "?utm_source=instagram",
+      title: "Contact Kat Chapman, BSN, RN",
+      referrer: "https://katchapmanrn.com/botox-huntersville",
+    },
+  });
+  env.controller.grant();
+  assert.ok(env.scripts.includes("https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP"));
+  assert.ok(env.scripts.includes("https://js.hs-scripts.com/22023986.js"));
+  assert.equal(env.scripts.some((src) => src.includes("facebook")), false);
+  const text = gaText(env.gtagCalls);
+  assert.match(text, /https:\/\/katchapmanrn\.com\/contact/);
+  assert.equal(text.includes("botox"), false);
+  assert.equal(text.includes("/botox-huntersville"), false);
+  const config = env.gtagCalls.find((c) => c[0] === "config");
+  assert.equal(config[2].page_referrer, "https://katchapmanrn.com");
+  assert.equal(config[2].send_page_view, false);
+  assert.equal(config[2].allow_google_signals, false);
+  assert.equal(config[2].ad_storage, undefined);
+  assert.equal(env.gtagCalls.filter((c) => c[1] === "page_view").length, 1);
+  env.controller.reportForm("contact", true);
   const lead = env.gtagCalls.find((c) => c[1] === "generate_lead");
   assert.deepEqual(lead[2], { form_id: "contact", lead_source: "hubspot_form" });
-  assert.equal(env.controller.reportForm("contact", false, "rejected"), true);
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "form_submit_failed").length, 1);
-  assert.equal(JSON.stringify(lead).includes("patient@"), false);
-
-  const beforeRevoke = env.gtagCalls.length;
-  env.controller.revoke();
-  assert.equal(env.gtagCalls.length, beforeRevoke + 1);
-  const revoked = env.gtagCalls.at(-1);
-  assert.equal(revoked[0], "consent");
-  assert.equal(revoked[2].analytics_storage, "denied");
-  const afterRevoke = env.gtagCalls.length;
-  env.controller.handleAnchor(booked);
-  assert.equal(env.gtagCalls.length, afterRevoke);
-  env.controller.grant();
-  assert.equal(env.gtagCalls.filter((c) => c[1] === "page_view").length, 2);
+  assert.equal(JSON.stringify(lead).includes("botox"), false);
 });
 
 test("denied consent still keeps the CRM form and omits the HubSpot cookie", () => {
@@ -236,11 +223,40 @@ test("denied consent still keeps the CRM form and omits the HubSpot cookie", () 
   assert.equal(env.fbqCalls.length, 0);
 });
 
-test("a supplied pixel id loads on the real page and does not receive form text", () => {
-  const env = setup({ pixelId: TEST_PIXEL });
+test("a supplied pixel id stays unloaded on a treatment page and its referrer", () => {
+  const blocked = setup({ pixelId: TEST_PIXEL });
+  blocked.controller.grant();
+  assert.equal(blocked.scripts.some((src) => src.includes("facebook")), false);
+  assert.equal(blocked.fbqCalls.length, 0);
+  const fromTreatment = setup({
+    pixelId: TEST_PIXEL,
+    location: {
+      href: "https://katchapmanrn.com/contact",
+      pathname: "/contact",
+      search: "",
+      title: "Contact Kat Chapman, BSN, RN",
+      referrer: "https://katchapmanrn.com/lip-filler-huntersville",
+    },
+  });
+  fromTreatment.controller.grant();
+  assert.equal(fromTreatment.scripts.some((src) => src.includes("facebook")), false);
+  assert.equal(gaText(fromTreatment.gtagCalls).includes("lip-filler"), false);
+});
+
+test("a supplied pixel id can load on a neutral page with a safe referrer", () => {
+  const env = setup({
+    pixelId: TEST_PIXEL,
+    location: {
+      href: "https://katchapmanrn.com/about",
+      pathname: "/about",
+      search: "",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
+      referrer: "https://www.google.com/",
+    },
+  });
   assert.equal(env.dataset.measurementMeta, "configured");
   env.controller.grant();
-  assert.equal(env.scripts[0], "https://connect.facebook.net/en_US/fbevents.js");
+  assert.ok(env.scripts.includes("https://connect.facebook.net/en_US/fbevents.js"));
   const init = env.fbqCalls.find((call) => call[0] === "init");
   assert.deepEqual(init, ["init", TEST_PIXEL]);
   const page = env.fbqCalls.find((call) => call[1] === "PageView");
@@ -286,22 +302,28 @@ test("booking truthfulness rejects clicks, wrong origins, and string flags", () 
   assert.deepEqual(result, { ok: true });
 });
 
-test("public hits keep the real page and strip contact query values", () => {
-  assert.equal(pageCategory("/"), "home");
-  assert.equal(pageCategory("/contact"), "contact");
-  assert.equal(pageCategory("/blog/is-botox-safe-for-first-timers"), "article");
+test("treatment pages produce no ad hit and neutral pages drop treatment referrers", () => {
   assert.equal(pageCategory("/botox-huntersville"), "local");
-  assert.equal(pageCategory("/404.html"), "not_found");
-  const hit = publicPageHit({
-    href: "https://katchapmanrn.com/lip-filler-mooresville?email=a@b.com&utm_source=google&date=2026-11-06",
+  assert.equal(publicPageHit({
+    href: "https://katchapmanrn.com/lip-filler-mooresville?email=a@b.com",
     title: "Lip filler in Mooresville | Kat Chapman RN",
     referrer: "https://www.google.com/search?q=lip+filler",
+  }), null);
+  const hit = publicPageHit({
+    href: "https://katchapmanrn.com/contact?utm_source=instagram",
+    title: "Contact Kat Chapman, BSN, RN",
+    referrer: "https://katchapmanrn.com/botox-huntersville",
   });
-  assert.equal(hit.page_location, "https://katchapmanrn.com/lip-filler-mooresville?utm_source=google");
-  assert.equal(hit.page_title, "Lip filler in Mooresville | Kat Chapman RN");
-  assert.equal(hit.page_referrer, "https://www.google.com/search");
-  assert.equal(JSON.stringify(hit).includes("a@b.com"), false);
-  assert.equal(JSON.stringify(hit).includes("2026-11-06"), false);
+  assert.equal(hit.page_location, "https://katchapmanrn.com/contact?utm_source=instagram");
+  assert.equal(hit.page_referrer, "https://katchapmanrn.com");
+  assert.equal(JSON.stringify(hit).includes("botox"), false);
+  const faq = publicPageHit({
+    href: "https://katchapmanrn.com/faq",
+    title: "Botox and Filler FAQ in Huntersville, NC",
+    referrer: "",
+  });
+  assert.equal(faq.page_location, "https://katchapmanrn.com/faq");
+  assert.equal(faq.page_title, "Kat Chapman RN");
 });
 
 test("HubSpot form context stays on supported fields", () => {

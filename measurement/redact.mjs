@@ -49,28 +49,79 @@ export function referrerOrigin(referrer) {
   }
 }
 
+const NEUTRAL = new Set([
+  "/", "/about", "/services", "/pricing", "/contact", "/gallery",
+  "/faq", "/privacy", "/terms", "/book", "/404",
+]);
+
+/** Treatment words that must not appear in a Google or Meta field. */
+const TREATMENT = /botox|dysport|filler|injectable|rhinoplasty|sculptra|radiesse|nasolabial|jawline|neurotoxin|facial-balancing|dermal|under-eye|brow-lift|lip-flip|lip-filler|prp|temple-filler|cheek-filler/i;
+
+export function isNeutralPath(pathname) {
+  const path = normalizePath(pathname).replace(/\.html$/, "");
+  return NEUTRAL.has(path || "/");
+}
+
+export function leaksTreatment(value) {
+  return TREATMENT.test(String(value || ""));
+}
+
+function ownHost(hostname) {
+  const host = String(hostname || "").replace(/^www\./, "");
+  return host === ADS_HOST || host === "blog." + ADS_HOST;
+}
+
+/** Origin only when the referrer path or query would reveal a treatment page. */
+export function referrerForAds(referrer) {
+  if (!referrer) return undefined;
+  let u;
+  try { u = new URL(referrer); } catch { return undefined; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+  const unsafe = leaksTreatment(u.pathname) || leaksTreatment(u.search) || (ownHost(u.hostname) && !isNeutralPath(u.pathname));
+  if (unsafe) return u.origin;
+  return u.origin + u.pathname;
+}
+
 /**
- * Real page identity for Google and Meta. Personal query values are removed.
- * The host and path stay, so the hit is not moved onto a stand-in URL.
+ * Google Analytics hit for a non-treatment URL only.
+ * Treatment pages return null so no substitute page view is invented.
+ * Titles and referrers that name a treatment are not copied through.
  */
 export function publicPageHit({ href, title, referrer }) {
-  let page_location = "https://" + ADS_HOST + "/";
-  try {
-    page_location = sanitizeHref(new URL(href, "https://" + ADS_HOST).href);
-  } catch {
-    page_location = "https://" + ADS_HOST + "/";
+  let u;
+  try { u = new URL(href, "https://" + ADS_HOST); } catch { return null; }
+  if (!isNeutralPath(u.pathname)) return null;
+  const clean = new URL(sanitizeHref(u.href));
+  const kept = new URLSearchParams();
+  for (const [key, value] of clean.searchParams.entries()) {
+    if (!leaksTreatment(key + "=" + value)) kept.append(key, value);
   }
+  const search = kept.toString();
+  const rawTitle = typeof title === "string" ? title.trim() : "";
   const out = {
-    page_location,
-    page_title: typeof title === "string" && title.trim() ? title.trim().slice(0, 300) : "Kat Chapman RN",
+    page_location: clean.origin + clean.pathname + (search ? "?" + search : ""),
+    page_title: rawTitle && !leaksTreatment(rawTitle) ? rawTitle.slice(0, 300) : "Kat Chapman RN",
   };
-  if (referrer) {
-    try {
-      const safeRef = sanitizeHref(new URL(referrer).href);
-      if (safeRef) out.page_referrer = safeRef;
-    } catch {
-      /* ignore a referrer that is not a URL */
-    }
-  }
+  const pageReferrer = referrerForAds(referrer);
+  if (pageReferrer) out.page_referrer = pageReferrer;
   return out;
+}
+
+/** Meta's pixel has no supported switch for the page URL or referrer it attaches. */
+export function metaAudienceAllowed({ href, referrer }) {
+  let u;
+  try { u = new URL(href, "https://" + ADS_HOST); } catch { return false; }
+  if (!isNeutralPath(u.pathname)) return false;
+  if (leaksTreatment(u.pathname) || leaksTreatment(u.search)) return false;
+  if (referrer && (leaksTreatment(referrer) || referrerNamesTreatmentPage(referrer))) return false;
+  return true;
+}
+
+function referrerNamesTreatmentPage(referrer) {
+  try {
+    const u = new URL(referrer);
+    return ownHost(u.hostname) && !isNeutralPath(u.pathname);
+  } catch {
+    return true;
+  }
 }

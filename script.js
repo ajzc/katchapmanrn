@@ -37,6 +37,15 @@ function kcrnSafeClickId(value) {
 }
 (function () {
   try {
+    var referrer = document.querySelector('meta[name="referrer"]');
+    if (!referrer) {
+      referrer = document.createElement("meta");
+      referrer.name = "referrer";
+      document.head.appendChild(referrer);
+    }
+    referrer.content = "origin";
+  } catch (e) {}
+  try {
     var next = kcrnSanitizeHref(location.href);
     if (next && next !== location.href) history.replaceState(null, "", next);
   } catch (e) {}

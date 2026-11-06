@@ -23,13 +23,15 @@ export function classifyClick(href, hasBookAttr) {
 }
 
 export function pageViewEvent(page) {
+  const params = publicPageHit(page);
+  if (!params) return null;
   return {
     name: "page_view",
     once: "page_view",
     conversion: false,
     ga: true,
     meta: true,
-    params: publicPageHit(page),
+    params,
   };
 }
 
