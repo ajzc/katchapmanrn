@@ -17,11 +17,15 @@ export function metaInstallPlan(pixelId, consent) {
   return { load: true, reason: "ready", script: META_SCRIPT_URL };
 }
 
-/** init receives the pixel ID only: no advanced-matching object. */
+/**
+ * init receives the pixel ID only: no advanced-matching object.
+ * Do not queue consent revoke before init. fbevents.js lockConsent()
+ * stops the queue, so a later grant never runs and PageView stays queued.
+ * This boot runs only after the US measurement gate has already allowed it.
+ */
 export function metaBootCommands(pixelId) {
   if (!isConfiguredPixelId(pixelId)) return [];
   return [
-    ["consent", "revoke"],
     ["set", "autoConfig", false, pixelId.trim()],
     ["dataProcessingOptions", ["LDU"], 0, 0],
     ["init", pixelId.trim()],

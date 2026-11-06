@@ -25,15 +25,15 @@ test("every public template includes the shared classic script", () => {
     const html = fs.readFileSync(path.join(root, name), "utf8");
     const template = templateOf(name);
     seen.add(template);
-    assert.match(html, /<script src="(?:\/)?script\.js\?v=10"><\/script>/, name);
-    assert.doesNotMatch(html, /type=["']module["'][^>]*script\.js|script\.js\?v=10"[^>]*type=["']module["']/, name);
+    assert.match(html, /<script src="(?:\/)?script\.js\?v=11"><\/script>/, name);
+    assert.doesNotMatch(html, /type=["']module["'][^>]*script\.js|script\.js\?v=11"[^>]*type=["']module["']/, name);
     assert.doesNotMatch(html, /cloudflareinsights\.com/, name);
     assert.match(html, /styles\.css\?v=13/, name);
     assert.doesNotMatch(html, /fbq\(|G-R3W00H7HMB|connect\.facebook\.net|googletagmanager\.com\/gtag/, name);
     assert.match(html, /meetings\.hubspot\.com\/ajchapman20\/book-a-visit-kat-chapman-rn/, name);
     assert.equal(pageCategory("/" + name), template === "home" ? "home" : template === "local" ? "local" : template === "core" ? pageCategory("/" + name.replace(/\.html$/, "")) : template === "not_found" ? "not_found" : pageCategory("/" + name.replace(/\.html$/, "")));
     if (html.includes("cf-beacon")) {
-      assert.ok(html.indexOf("script.js?v=10") < html.indexOf("cf-beacon"), name);
+      assert.ok(html.indexOf("script.js?v=11") < html.indexOf("cf-beacon"), name);
     }
   }
   for (const template of ["home", "contact", "not_found", "core", "local"]) assert.ok(seen.has(template));
