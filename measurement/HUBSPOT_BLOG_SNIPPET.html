@@ -1,23 +1,69 @@
 <!--
-  One manual Meta pixel for the HubSpot blog template header. Do not also enable
-  HubSpot's Meta/Facebook pixel. Do not add a Google tag or js.hs-scripts.com here.
-  Same dataset as measurement/config.mjs. Articles whose address names a treatment
-  do not load the pixel. Automatic matching is off in Events Manager. autoConfig is
-  false here; the automatic-event control was not available to verify.
+  Paste once into the HubSpot blog template header. Do not also enable HubSpot's
+  Meta pixel. Do not add a Google tag or js.hs-scripts.com. Native Google Analytics
+  on the blog is turned off in HubSpot, not by this file.
+  Pixel 2738351096678050. autoConfig is false. No Conversions API.
+  Meta loads only on / and /blog. No article path loads it. A first-party referrer
+  that is not / or /blog does not load it. A referrer with a query string does not
+  load it. An empty title or a title that contains a URL does not load it.
+  Revoke calls fbq consent revoke. If no form field has typed text, the page reloads.
+  Typed form text is not copied into storage. Allow after a revoke grants consent again.
 -->
 <script>
 (function () {
   var META_PIXEL_ID = "2738351096678050";
-  var treatment = /botox|dysport|filler|injectable|rhinoplasty|sculptra|radiesse|nasolabial|jawline|neurotoxin|facial-balancing|dermal|under-eye|brow-lift|lip-flip|lip-filler|prp|temple-filler|cheek-filler/i;
-  if (treatment.test(location.pathname) || treatment.test(location.search) || treatment.test(document.referrer || "")) return;
-  var neutral = { "/": 1, "/blog": 1 };
-  var path = location.pathname.replace(/\/$/, "") || "/";
-  if (!neutral[path] && path.indexOf("/blog/") === 0 && treatment.test(path)) return;
-  if (treatment.test(path)) return;
-  var started = false;
-  function boot() {
-    if (started || window.fbq) return;
-    started = true;
+  var booted = false;
+
+  function normalizePath(pathname) {
+    var raw = String(pathname || "/").split("?")[0].split("#")[0];
+    var withSlash = raw.charAt(0) === "/" ? raw : "/" + raw;
+    if (withSlash.length > 1 && withSlash.charAt(withSlash.length - 1) === "/") return withSlash.slice(0, -1);
+    return withSlash || "/";
+  }
+  function isIndex(pathname) {
+    var path = normalizePath(pathname);
+    return path === "/" || path === "/blog";
+  }
+  function referrerBlocks(referrer) {
+    if (!referrer) return false;
+    var url;
+    try { url = new URL(referrer); } catch (e) { return true; }
+    if (url.search) return true;
+    var path = normalizePath(url.pathname);
+    var host = url.hostname.replace(/^www\./, "");
+    if (host === "katchapmanrn.com" || host === "blog.katchapmanrn.com") return !isIndex(path);
+    return path !== "/";
+  }
+  function titleBlocks(title) {
+    var text = String(title || "");
+    if (!text.trim()) return true;
+    if (/https?:/i.test(text)) return true;
+    return false;
+  }
+  function pageOk() {
+    if (location.search) return false;
+    if (!isIndex(location.pathname)) return false;
+    if (referrerBlocks(document.referrer || "")) return false;
+    if (titleBlocks(document.title)) return false;
+    return true;
+  }
+  function typedFormPresent() {
+    var fields = document.querySelectorAll("form input, form textarea, form select");
+    for (var i = 0; i < fields.length; i++) {
+      var el = fields[i];
+      var type = String(el.type || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "checkbox" || type === "radio") continue;
+      if (String(el.value || "").trim()) return true;
+    }
+    return false;
+  }
+  function allow() {
+    if (!pageOk()) return;
+    if (booted) {
+      if (window.fbq) window.fbq("consent", "grant");
+      return;
+    }
+    booted = true;
     var fbq = window.fbq = function () {
       if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
       else fbq.queue.push(arguments);
@@ -39,11 +85,17 @@
     script.src = "https://connect.facebook.net/en_US/fbevents.js";
     document.head.appendChild(script);
   }
+  function deny() {
+    if (window.fbq) window.fbq("consent", "revoke");
+    if (!booted) return;
+    if (typedFormPresent()) return;
+    location.reload();
+  }
   var _hsp = window._hsp = window._hsp || [];
   _hsp.push(["addPrivacyConsentListener", function (consent) {
     var analytics = consent && (consent.allowed === true || (consent.categories && consent.categories.analytics));
-    if (analytics) boot();
-    else if (window.fbq) window.fbq("consent", "revoke");
+    if (analytics) allow();
+    else deny();
   }]);
 })();
 </script>
