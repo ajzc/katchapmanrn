@@ -20,7 +20,7 @@ Google Analytics and Meta do not load on treatment pages or receive treatment pa
 
 Meta loads only with your permission and a verified pixel ID. Automatic matching stays off.
 
-We measure page views, successful form submissions, and clicks to call, text, or book in HubSpot and, on permitted pages, in Google Analytics. A Book click is not a completed booking. We record a booking event only after the embedded scheduler confirms a booking. Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Receipt of those two events by Meta is not confirmed.
+We measure page views, successful form submissions, and clicks to call, text, or book in HubSpot and, on permitted pages, in Google Analytics. A Book click is not a completed booking. We record a booking event only after the embedded scheduler confirms a booking. Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Whether Meta receives those two events is not confirmed.
 
 The scheduler works even if measurement is off.
 
@@ -36,11 +36,11 @@ The returned sentence "Automatic matching and automatic event collection stay of
 
 This sentence was added so the policy does not promise events Meta may block. It is not part of the returned draft:
 
-Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Receipt of those two events by Meta is not confirmed.
+Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Whether Meta receives those two events is not confirmed.
 
 This sentence was added because the scheduler is operational HubSpot, not measurement. It is not part of the returned draft:
 
-The scheduler is HubSpot Meetings. The name and contact details you enter there, and the cookies HubSpot sets to run the scheduler, are used to book the visit. That is separate from measurement. HubSpot privacy notice: https://legal.hubspot.com/privacy-policy
+The scheduler is HubSpot Meetings. The name and contact details you enter there go to HubSpot to book the visit, and HubSpot sets cookies to run the scheduler. That is separate from measurement. HubSpot privacy notice: https://legal.hubspot.com/privacy-policy
 
 ## Still conditional after this repo change
 
