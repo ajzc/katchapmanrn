@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import worker, { trustedCountry } from "./index.mjs";
+import worker, { trustedCountry, pagesUrl } from "./index.mjs";
 
 const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "index.mjs"), "utf8");
 const MEETINGS = "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn";
@@ -35,7 +35,7 @@ test("/book and /book/ pass through to Pages", async () => {
   for (const pathname of ["/book", "/book/", "/book?utm_source=instagram"]) {
     const url = "https://katchapmanrn.com" + pathname;
     await withFetch(async (input) => {
-      assert.equal(input instanceof Request ? input.url : String(input), url);
+      assert.equal(input instanceof Request ? input.url : String(input), pagesUrl(new Request(url)).toString());
       return new Response("<main class=\"meetings-iframe-container\"></main>", {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
@@ -68,11 +68,25 @@ test("/js/main.js is not replaced with always-on vendor loads", async () => {
 test("HTML keeps a consent banner and other paths are unchanged", async () => {
   const html = "<div id=\"consent\">Allow measurement</div><a href=\"/pricing\">Pricing</a>";
   await withFetch(async (input) => {
-    assert.equal(new URL(input.url).pathname, "/pricing");
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    assert.equal(url.origin, "https://katchapmanrn.pages.dev");
+    assert.equal(url.pathname, "/pricing");
     return new Response(html, { status: 200, headers: { "content-type": "text/html" } });
   }, async () => {
     const response = await worker.fetch(new Request("https://katchapmanrn.com/pricing"));
     assert.equal(await response.text(), html);
+  });
+});
+
+test("apex / is loaded from Pages so a stale zone homepage is not reused", async () => {
+  await withFetch(async (input) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url === "https://katchapmanrn.com/") return new Response("<script src=\"script.js?v=3\"></script>", { status: 200, headers: { "content-type": "text/html" } });
+    assert.equal(url, "https://katchapmanrn.pages.dev/");
+    return new Response("<script src=\"script.js?v=10\"></script>", { status: 200, headers: { "content-type": "text/html" } });
+  }, async () => {
+    const response = await worker.fetch(new Request("https://katchapmanrn.com/"));
+    assert.match(await response.text(), /script\.js\?v=10/);
   });
 });
 

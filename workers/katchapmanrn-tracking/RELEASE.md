@@ -2,7 +2,7 @@
 
 This directory is the replacement for the live worker captured as SHA-256 `39c6f399849a2018cb6dc10aa5cd629a61a138e919b91f2d85fa5382c5c36e89`. It is not deployed.
 
-The live script returns 302 for `/book` and `/book/` to HubSpot Meetings, serves an always-on Google/HubSpot/Meta script at `/js/main.js`, and removes `#consent`. This replacement does not. `/blog`, `/blog/`, and `/blog.html` still proxy `https://katchapmanrn.pages.dev/blog` with the same header edits. `/measurement/context` returns `{ "country": "<code>" }` from `request.cf.country` only, with `cache-control: private, no-store`. A client `CF-IPCountry` header is ignored. Missing, `XX`, and `T1` return an empty country. HTML from Pages is not rewritten, so a cached page cannot carry another visitor's country. Every other path, including `/book` and `/js/main.js`, is fetched from the origin unchanged.
+The live script returns 302 for `/book` and `/book/` to HubSpot Meetings, serves an always-on Google/HubSpot/Meta script at `/js/main.js`, and removes `#consent`. This replacement does not. `/blog`, `/blog/`, and `/blog.html` still proxy `https://katchapmanrn.pages.dev/blog` with the same header edits. `/measurement/context` returns `{ "country": "<code>" }` from `request.cf.country` only, with `cache-control: private, no-store`. A client `CF-IPCountry` header is ignored. Missing, `XX`, and `T1` return an empty country. HTML from Pages is not rewritten, so a cached page cannot carry another visitor's country. Every other path, including `/book` and `/js/main.js`, is fetched from `https://katchapmanrn.pages.dev` with the same path and query. Do not fetch `https://katchapmanrn.com` from this worker: that hostname was still serving a stale homepage at `/` after the Pages upload.
 
 ## Order
 
