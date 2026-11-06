@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /measure-frame
+Disallow: /measure-frame.html
 
 Sitemap: https://katchapmanrn.com/sitemap.xml
 Sitemap: https://blog.katchapmanrn.com/sitemap.xml

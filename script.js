@@ -6,30 +6,8 @@
    so content is never gated on scripts loading. */
 document.documentElement.classList.add("js");
 
-/* Google Analytics 4 (G-0BX0PK6GZP)
-   Loaded here so every page that includes script.js is tracked. */
-(function () {
-  var s = document.createElement("script");
-  s.async = true;
-  s.src = "https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP";
-  document.head.appendChild(s);
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = function () { dataLayer.push(arguments); };
-  gtag("js", new Date());
-  gtag("config", "G-0BX0PK6GZP");
-})();
-
-/* HubSpot tracking (portal 22023986).
-   Enables analytics and ties form submissions to visitor sessions
-   via the hubspotutk cookie. Loaded for everyone; no cookie banner. */
-(function () {
-  var h = document.createElement("script");
-  h.async = true;
-  h.defer = true;
-  h.id = "hs-script-loader";
-  h.src = "https://js.hs-scripts.com/22023986.js";
-  document.head.appendChild(h);
-})();
+/* Google Analytics, HubSpot analytics, and optional Meta load from measurement.js
+   after the visitor accepts. script.js starts that file at the bottom. */
 
 /* >>> EDIT THESE IN ONE PLACE <<<
    Swap the placeholders below and every page updates. */
@@ -323,7 +301,7 @@ function hsShowError(form, msg) {
   el.textContent = "Sorry, that didn't go through: " + msg + " Please try again.";
 }
 
-function hsSubmit(guid, fields, form, successHtml) {
+function hsSubmit(guid, fields, form, successHtml, formKey) {
   /* pageUri is deliberately NOT sent: HubSpot returns 200 but silently drops
      every v3 submission whose context.pageUri is on katchapmanrn.com
      (verified 2026-10-20). pageName + hutk still give page and visitor context. */
@@ -351,6 +329,7 @@ function hsSubmit(guid, fields, form, successHtml) {
       if (window.console) console.error("HubSpot form submit failed", r.status, t);
       throw new Error(detail);
     }
+    if (window.KCRNMeasurement && formKey) window.KCRNMeasurement.trackFormSuccess(formKey);
     const ok = document.createElement("div");
     ok.className = "form-success";
     ok.innerHTML = successHtml;
@@ -374,7 +353,8 @@ if (joinFormEl) {
       { objectTypeId: "0-1", name: "beauty_event_host_interest", value: fd.get("beauty_event") ? "true" : "false" }
     ];
     hsSubmit(HS_FORMS.join, fields, joinFormEl,
-      "<strong>Request received.</strong> Kat will be in touch to book your visit.");
+      "<strong>Request received.</strong> Kat will be in touch to book your visit.",
+      "consult_request");
   });
 }
 
@@ -393,7 +373,8 @@ if (contactFormEl && contactFormEl.querySelector("[name=message]")) {
           "\n\nWants a free consultation: " + (fd.get("consult_opt_in") ? "Yes" : "No") }
     ];
     hsSubmit(HS_FORMS.contact, fields, contactFormEl,
-      "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.");
+      "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.",
+      "contact");
   });
 }
 
@@ -451,24 +432,8 @@ document.querySelectorAll(".site-footer h4").forEach(h => {
     }
   }
 });
-/* HubSpot click tracking: call / text / book (portal 22023986).
-   Each tap is logged as a HubSpot page view of /track/call, /track/text or /track/book,
-   so counts show in HubSpot Traffic analytics > Pages with no extra HubSpot setup. */
-(function () {
-  document.addEventListener("click", function (e) {
-    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
-    if (!a) return;
-    var href = (a.getAttribute("href") || "").toLowerCase();
-    var type =
-      href.indexOf("tel:") === 0 ? "call" :
-      href.indexOf("sms:") === 0 ? "text" :
-      (a.hasAttribute("data-book") || href.indexOf("meetings.hubspot.com") !== -1) ? "book" :
-      null;
-    if (!type) return;
-    var back = location.pathname;
-    var _hsq = (window._hsq = window._hsq || []);
-    _hsq.push(["setPath", "/track/" + type]);
-    _hsq.push(["trackPageView"]);
-    _hsq.push(["setPath", back]);
-  }, true);
-})();
+try {
+  if (window.KCRNMeasurement) window.KCRNMeasurement.start({ surface: "site" });
+} catch (e) {
+  if (window.console && console.error) console.error("Measurement did not start");
+}
