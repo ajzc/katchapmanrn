@@ -1,0 +1,6 @@
+name = "katchapmanrn-tracking"
+main = "src/index.mjs"
+compatibility_date = "2026-11-06"
+workers_dev = false
+
+# Do not run wrangler deploy from this change. See RELEASE.md.
