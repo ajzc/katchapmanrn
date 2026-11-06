@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<title>Kat Chapman RN</title>
+</head>
+<body>
+<script>
+/* Isolated Meta runtime. Sandboxed so it cannot read the embedding page. */
+(function (window) {
+  var parentOrigin = "";
+  var booted = false;
+  var pixelId = "";
+  var queue = [];
+
+  function validId(id) {
+    return typeof id === "string" && /^[0-9]{15,16}$/.test(id) && id !== "22023986";
+  }
+
+  function ensureFbq() {
+    if (window.fbq) return;
+    var fbq = function () {
+      if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
+      else fbq.queue.push(arguments);
+    };
+    fbq.push = fbq;
+    fbq.loaded = true;
+    fbq.version = "2.0";
+    fbq.queue = [];
+    fbq.disablePushState = true;
+    window.fbq = fbq;
+    window._fbq = fbq;
+  }
+
+  function loadScript() {
+    if (window.document.getElementById("kcrn-meta-lib")) return;
+    var s = window.document.createElement("script");
+    s.id = "kcrn-meta-lib";
+    s.async = true;
+    s.referrerPolicy = "no-referrer";
+    s.src = "https://connect.facebook.net/en_US/fbevents.js";
+    window.document.head.appendChild(s);
+  }
+
+  function boot(id) {
+    if (booted || !validId(id)) return false;
+    pixelId = id;
+    ensureFbq();
+    window.fbq.disablePushState = true;
+    window.fbq("consent", "revoke");
+    window.fbq("set", "autoConfig", false, pixelId);
+    window.fbq("dataProcessingOptions", ["LDU"], 0, 0);
+    window.fbq("init", pixelId);
+    window.fbq("consent", "grant");
+    loadScript();
+    booted = true;
+    var pending = queue.splice(0);
+    for (var i = 0; i < pending.length; i++) track(pending[i]);
+    return true;
+  }
+
+  function clean(message) {
+    if (!message || (message.method !== "track" && message.method !== "trackCustom")) return null;
+    var name = message.name;
+    if (name === "OutboundClick") {
+      var kind = message.params && message.params.link_kind;
+      if (kind !== "call" && kind !== "text" && kind !== "book") return null;
+      return { method: "trackCustom", name: "OutboundClick", params: { link_kind: kind } };
+    }
+    if (message.method !== "track") return null;
+    if (name !== "PageView" && name !== "Lead" && name !== "Schedule") return null;
+    return { method: "track", name: name };
+  }
+
+  function track(message) {
+    var call = clean(message);
+    if (!call) return false;
+    if (!booted) {
+      queue.push(call);
+      return true;
+    }
+    if (call.method === "trackCustom") window.fbq("trackCustom", call.name, call.params);
+    else window.fbq("track", call.name);
+    return true;
+  }
+
+  function handle(event) {
+    if (!event || event.source !== window.parent) return false;
+    var data = event.data;
+    if (!data || data.source !== "kcrn-measure") return false;
+    if (!parentOrigin) {
+      if (!event.origin || event.origin === "null") return false;
+      parentOrigin = event.origin;
+    } else if (event.origin !== parentOrigin) {
+      return false;
+    }
+    if (data.command === "boot") return boot(data.pixelId);
+    if (data.command === "track") return track(data);
+    if (data.command === "revoke" && window.fbq) {
+      window.fbq("consent", "revoke");
+      return true;
+    }
+    return false;
+  }
+
+  window.addEventListener("message", handle);
+  window.__kcrnHandleMetaMessage = handle;
+  try {
+    window.parent.postMessage({ source: "kcrn-measure", command: "ready" }, "*");
+  } catch (e) {}
+})(window);
+</script>
+</body>
+</html>
