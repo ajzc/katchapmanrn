@@ -10,12 +10,13 @@ export const MEETINGS_ORIGIN = "https://meetings.hubspot.com";
 export const MEETINGS_PATH = "/ajchapman20/book-a-visit-kat-chapman-rn";
 
 /**
- * Confirmed Meta Pixel / dataset ID from Events Manager.
- * Leave this empty until that ID is supplied. Digits only.
- * Meta's own tag template accepts a numeric ID with no fixed length.
- * This is not the HubSpot portal 22023986 and not a GA4 measurement ID.
+ * Meta dataset "Kat Chapman RN Website".
+ * Automatic website matching was confirmed off in Events Manager.
+ * Automatic event detection could not be checked before a website source existed.
+ * The page sets autoConfig false. Do not add Conversions API.
+ * Health and wellness classification may block Lead, Schedule, custom parameters, and URL parts.
  */
-export const META_PIXEL_ID = "";
+export const META_PIXEL_ID = "2738351096678050";
 
 export const LINKER_DOMAINS = ["katchapmanrn.com", "blog.katchapmanrn.com"];
 export const ADS_HOST = "katchapmanrn.com";

@@ -25,14 +25,15 @@ test("every public template includes the shared classic script", () => {
     const html = fs.readFileSync(path.join(root, name), "utf8");
     const template = templateOf(name);
     seen.add(template);
-    assert.match(html, /<script src="(?:\/)?script\.js\?v=7"><\/script>/, name);
-    assert.doesNotMatch(html, /type=["']module["'][^>]*script\.js|script\.js\?v=7"[^>]*type=["']module["']/, name);
+    assert.match(html, /<script src="(?:\/)?script\.js\?v=8"><\/script>/, name);
+    assert.doesNotMatch(html, /type=["']module["'][^>]*script\.js|script\.js\?v=8"[^>]*type=["']module["']/, name);
+    assert.doesNotMatch(html, /cloudflareinsights\.com/, name);
     assert.match(html, /styles\.css\?v=13/, name);
     assert.doesNotMatch(html, /fbq\(|G-R3W00H7HMB|connect\.facebook\.net|googletagmanager\.com\/gtag/, name);
     assert.match(html, /meetings\.hubspot\.com\/ajchapman20\/book-a-visit-kat-chapman-rn/, name);
     assert.equal(pageCategory("/" + name), template === "home" ? "home" : template === "local" ? "local" : template === "core" ? pageCategory("/" + name.replace(/\.html$/, "")) : template === "not_found" ? "not_found" : pageCategory("/" + name.replace(/\.html$/, "")));
     if (html.includes("cf-beacon")) {
-      assert.ok(html.indexOf("script.js?v=7") < html.indexOf("cf-beacon"), name);
+      assert.ok(html.indexOf("script.js?v=8") < html.indexOf("cf-beacon"), name);
     }
   }
   for (const template of ["home", "contact", "not_found", "core", "local"]) assert.ok(seen.has(template));
@@ -73,6 +74,6 @@ test("coverage map names Meta as unconfigured and separates HubSpot from ads eve
   assert.match(meta, /autoConfig", false/);
   assert.match(meta, /dataProcessingOptions", \["LDU"\]/);
   assert.doesNotMatch(meta, /\{15,16\}/);
-  assert.doesNotMatch(fs.readFileSync(path.join(root, "measurement/config.mjs"), "utf8"), /[0-9]{15,16}/);
+  assert.match(fs.readFileSync(path.join(root, "measurement/config.mjs"), "utf8"), /2738351096678050/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, "script.js"), "utf8"), /G-R3W00H7HMB|Chapman Med Spa/);
 });

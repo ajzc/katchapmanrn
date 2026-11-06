@@ -29,7 +29,7 @@ Google signals and ad storage stay off. Meta `init` receives the pixel ID only. 
 
 ## Gaps
 
-- Pixel ID still missing. Status `data-measurement-meta="unconfigured"`.
+- Pixel ID `2738351096678050` is set. The dataset had no website source and no events when it was added. Assign `katchapmanrn.com` in Events Manager if that screen requires a domain. Do not also enable a HubSpot Meta pixel. Automatic event detection in Events Manager remains unconfigured until that source exists.
 - If a Cloudflare rule still redirects `/book` to HubSpot, the same-site embed will not load until that rule is removed. The direct scheduler link remains.
 - Completed-booking events require the embed message. A new-tab booking does not send it.
 - Blog snippet does nothing until the parent pastes it and the pixel ID matches `measurement/config.mjs`.

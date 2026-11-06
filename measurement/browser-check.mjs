@@ -151,7 +151,7 @@ async function main() {
     check(search.includes("fbclid=FB123"), "fbclid should stay for attribution");
     check(await evaluate("document.getElementById('kcrn-measure-decline').textContent") === "Keep measurement off", "humanized decline label");
     check(await evaluate("document.querySelector('.measure-banner p:last-of-type').textContent.indexOf('Submitted contact form details go to HubSpot') !== -1"), "banner states form details go to HubSpot");
-    check(await evaluate("document.documentElement.dataset.measurementMeta") === "unconfigured", "meta dataset should be unconfigured");
+    check(await evaluate("document.documentElement.dataset.measurementMeta") === "configured", "meta dataset id is configured");
     check(await evaluate("!document.getElementById('kcrn-ga') && !document.getElementById('hs-script-loader') && !document.querySelector('script[src*=\"facebook\"]')"), "tags should not load before consent");
     const earlyAds = session.requests.filter((url) => /facebook|googletagmanager|google-analytics|hs-scripts|hubspot/i.test(url));
     check(earlyAds.length === 0, "ads hosts were requested before consent: " + earlyAds.join(", "));
@@ -237,7 +237,7 @@ async function main() {
 
     for (const page of ["/index.html", "/404.html", "/pricing.html", "/book.html"]) {
       await go(page);
-      check(await evaluate("document.documentElement.dataset.measurementMeta") === "unconfigured", page + " meta status");
+      check(await evaluate("document.documentElement.dataset.measurementMeta") === "configured", page + " meta status");
       check(await evaluate("!!document.querySelector('script[src*=\"script.js\"]')"), page + " shared script");
     }
     check(await evaluate("!!document.querySelector('.meetings-iframe-container')"), "booking page should embed the scheduler");

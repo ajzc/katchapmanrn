@@ -1,27 +1,23 @@
 <!--
-  Kat Chapman RN blog only. Parent pastes this once into the HubSpot blog template header
-  so every article inherits it. Do not paste it on katchapmanrn.com pages.
-
-  Do not add Google Analytics here. The blog's native HubSpot Google Analytics 4
-  integration already loads G-0BX0PK6GZP.
-  Do not add https://js.hs-scripts.com/22023986.js here. HubSpot pages already load it.
-
-  Leave META_PIXEL_ID empty until Events Manager supplies the same dataset ID
-  used in measurement/config.mjs. If HubSpot Ads is already injecting a Meta pixel,
-  delete this snippet instead of running two pixels.
-
-  This waits for HubSpot's privacy-consent listener. It does not add a second banner.
-  A granted analytics choice loads the pixel on the real blog URL. No form fields are passed.
+  One manual Meta pixel for the HubSpot blog template header. Do not also enable
+  HubSpot's Meta/Facebook pixel. Do not add a Google tag or js.hs-scripts.com here.
+  Same dataset as measurement/config.mjs. Articles whose address names a treatment
+  do not load the pixel. Automatic matching is off in Events Manager. autoConfig is
+  false here; the automatic-event control was not available to verify.
 -->
 <script>
 (function () {
-  var META_PIXEL_ID = "";
-  if (!/^[0-9]+$/.test(META_PIXEL_ID)) return;
+  var META_PIXEL_ID = "2738351096678050";
+  var treatment = /botox|dysport|filler|injectable|rhinoplasty|sculptra|radiesse|nasolabial|jawline|neurotoxin|facial-balancing|dermal|under-eye|brow-lift|lip-flip|lip-filler|prp|temple-filler|cheek-filler/i;
+  if (treatment.test(location.pathname) || treatment.test(location.search) || treatment.test(document.referrer || "")) return;
+  var neutral = { "/": 1, "/blog": 1 };
+  var path = location.pathname.replace(/\/$/, "") || "/";
+  if (!neutral[path] && path.indexOf("/blog/") === 0 && treatment.test(path)) return;
+  if (treatment.test(path)) return;
   var started = false;
   function boot() {
-    if (started) return;
+    if (started || window.fbq) return;
     started = true;
-    if (window.fbq) return;
     var fbq = window.fbq = function () {
       if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
       else fbq.queue.push(arguments);

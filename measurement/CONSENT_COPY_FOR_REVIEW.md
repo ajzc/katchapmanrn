@@ -1,10 +1,6 @@
-# Consent copy for Copy Humanizer
+# Consent copy
 
-The short banner below is the humanized draft now shown on the site. It is not permission to collect more than the field list. `privacy.html` was not rewritten.
-
-## Short banner, in use
-
-Privacy settings
+Short banner is unchanged:
 
 Measurement stays off until you allow it. With your permission, HubSpot can record pages you visit on Kat Chapman RN and connect a submitted form to that visit. Submitted contact form details go to HubSpot. Google, and Meta when a pixel is configured, receive measurement data. You can change your choice in Privacy settings.
 
@@ -14,16 +10,40 @@ Keep measurement off
 
 Privacy settings
 
-"Privacy settings" is the button that reopens this choice. It is not a new settings page. The same "Keep measurement off" label is used before measurement starts and again after it was allowed.
+## Published in privacy.html
 
-## Expanded disclosure — second humanizer pass required before publication
+Google, Meta, and HubSpot measurement scripts stay off until you choose Allow measurement. Keep measurement off leaves them off. You can turn measurement off later in Privacy settings to stop future measurement.
 
-This list is what the code sends. It is not live privacy-page copy.
+Contact forms work separately. The name, email, phone number, and message you submit go to HubSpot even if measurement is off. With measurement allowed, HubSpot analytics can receive page URLs and titles and may connect your form submission to your visit.
 
-If you allow measurement, HubSpot's tracking code receives the page address you are on, including the path and the page title, and can tie a form you submit to that visit. The contact form sends HubSpot the name, email, phone, and message you typed even when measurement stays off. That form is not sent to Google or Meta.
+Google Analytics and Meta do not load on treatment pages or receive treatment page URLs, titles, or referrers. On permitted pages, they can receive page URLs, titles, referrers, technical and cookie identifiers, and permitted campaign identifiers. We do not add your name, email, phone number, message, or appointment time to Google or Meta event data. Google ad storage and advertising signals stay off.
 
-Google Analytics receives a page address only for pages that are not treatment URLs, such as home, contact, pricing, or the booking page. It does not receive a treatment page address, and it does not receive a made-up address in its place. If the previous page was a treatment page, Google receives the site name katchapmanrn.com and not that treatment address. A title is sent only when it does not name a treatment. Google can also receive event names and these details: call, text, or book; a form id of contact or join; and, when HubSpot's scheduler confirms a visit on an allowed page, that a booking was completed. It does not receive your name, email, phone, message, or appointment time as event details. The Google tag also uses its ordinary cookies and technical fields, such as a client id, session, language, and screen size, on pages where it loads. Advertising storage and Google signals stay off. Treatment pages are not sent to Google.
+Meta loads only with your permission and a verified pixel ID. Automatic matching stays off.
 
-Meta does not load on a treatment page, on a page whose address contains a treatment name, or when the previous page was a treatment page. Where it does load, and only after a pixel ID is added and you allow measurement, it receives a page view, a lead after a form succeeds, a schedule event only after HubSpot confirms a booking, and an outbound click marked call, text, or book. Meta's script receives the address of that allowed page. This code does not give Meta your name, email, phone, message, appointment time, or a treatment page address. Automatic button and form collection is turned off in the pixel call. Automatic advanced matching is not turned on by this code; it still has to be switched off in Events Manager. There is no Meta request until those conditions are met.
+We measure page views, successful form submissions, and clicks to call, text, or book in HubSpot and, on permitted pages, in Google Analytics. A Book click is not a completed booking. We record a booking event only after the embedded scheduler confirms a booking. Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Receipt of those two events by Meta is not confirmed.
 
-A Book click opens the scheduler. It is not a completed booking. Choosing Keep measurement off stops later measurement. The contact form still submits to HubSpot.
+The scheduler works even if measurement is off.
+
+## Published on the booking page
+
+The scheduler is on this page. It works even if measurement is off.
+
+Open the scheduler in a new tab.
+
+## Not published — needs a follow-up humanizer pass
+
+The returned sentence "Automatic matching and automatic event collection stay off" is not published as a whole. Automatic matching is confirmed off in Events Manager. The automatic event detection control was not available before a website source existed, so this page does not claim that control is off. The code sets autoConfig to false. Recheck that setting after the pixel is connected to katchapmanrn.com.
+
+This sentence was added so the policy does not promise events Meta may block. It is not part of the returned draft:
+
+Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Receipt of those two events by Meta is not confirmed.
+
+This sentence was added because the scheduler is operational HubSpot, not measurement. It is not part of the returned draft:
+
+The scheduler is HubSpot Meetings. The name and contact details you enter there, and the cookies HubSpot sets to run the scheduler, are used to book the visit. That is separate from measurement. HubSpot privacy notice: https://legal.hubspot.com/privacy-policy
+
+## Still conditional after this repo change
+
+The short banner says measurement stays off until Allow. That is true for Google, Meta, and HubSpot measurement in this repo after the manual Cloudflare beacon tags are removed. It stays false if Cloudflare Web Analytics automatic injection is still enabled. Dashboard path, from Cloudflare's Web Analytics get-started page: Web Analytics, the site card, Manage site, JS snippet setup, Disable. That option is documented as: the JS snippet will not be injected and has been disabled. Removing only the tags in this repo does not switch that control.
+
+Turning measurement off reloads the page after the denial is saved and in-progress contact fields are stored. The reload is what stops a script that already loaded. Consent updates alone are not treated as enough.

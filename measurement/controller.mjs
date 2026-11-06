@@ -217,6 +217,9 @@ export function createController(deps) {
       if (deps.fbq) deps.fbq("consent", "revoke");
       if (deps.clearMetaCookies) deps.clearMetaCookies();
       publish();
+      const loaded = gaLoaded || metaBooted || tagsLoaded;
+      if (loaded && deps.saveDraft) deps.saveDraft();
+      if (loaded && deps.reload) deps.reload();
     },
     buildFormContext(pageName) {
       return buildHubSpotContext({
@@ -254,6 +257,20 @@ export function createController(deps) {
       return appendUtms(url, utms);
     },
   };
+}
+
+function restoreFormDraft(document, window) {
+  let raw = null;
+  try { raw = window.sessionStorage.getItem("kcrn_form_draft"); } catch { return; }
+  if (!raw) return;
+  try { window.sessionStorage.removeItem("kcrn_form_draft"); } catch { /* ignore */ }
+  let data = null;
+  try { data = JSON.parse(raw); } catch { return; }
+  document.querySelectorAll("form.contact-form [name]").forEach((el) => {
+    if (!Object.prototype.hasOwnProperty.call(data, el.name)) return;
+    if (el.type === "checkbox") el.checked = !!data[el.name];
+    else el.value = data[el.name] == null ? "" : String(data[el.name]);
+  });
 }
 
 export function attachMeasurement(window, document) {
@@ -326,7 +343,20 @@ export function attachMeasurement(window, document) {
       document.cookie = "_fbp=; Max-Age=0; path=/";
       document.cookie = "_fbc=; Max-Age=0; path=/";
     },
+    saveDraft() {
+      const data = {};
+      document.querySelectorAll("form.contact-form [name]").forEach((el) => {
+        if (!el.name || el.type === "hidden" || el.name.charAt(0) === "_") return;
+        data[el.name] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      try { window.sessionStorage.setItem("kcrn_form_draft", JSON.stringify(data)); } catch { /* ignore */ }
+    },
+    reload() {
+      window.location.reload();
+    },
   });
+  restoreFormDraft(document, window);
+
   mountBanner(document, controller);
   document.addEventListener("click", (event) => {
     const anchor = event.target && event.target.closest ? event.target.closest("a[href]") : null;

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
-import { META_PIXEL_ID, GA4_MEASUREMENT_ID, HS_PORTAL_ID } from "./config.mjs";
+import { META_PIXEL_ID, GA4_MEASUREMENT_ID, HS_PORTAL_ID, CONSENT_STORAGE_KEY } from "./config.mjs";
 import { isConfiguredPixelId, metaInstallPlan, metaBootCommands, metaTrackCommand, cleanFrameTrack } from "./meta.mjs";
 import { sanitizeHref } from "./utm.mjs";
 import { publicPageHit, pageCategory } from "./redact.mjs";
@@ -81,6 +81,7 @@ function setup(overrides = {}) {
       fbqFn = fbq;
     },
     get fbq() { return fbqFn; },
+    reload: overrides.reload,
   });
   return {
     controller,
@@ -98,8 +99,8 @@ function gaText(gtagCalls) {
   return flatten(gtagCalls).join("\n").toLowerCase();
 }
 
-test("production Meta pixel id is empty and known non-pixel ids are rejected", () => {
-  assert.equal(META_PIXEL_ID, "");
+test("production Meta pixel id is the verified dataset and non-numeric ids are rejected", () => {
+  assert.equal(META_PIXEL_ID, "2738351096678050");
   assert.equal(metaInstallPlan("", "granted").reason, "missing_id");
   assert.equal(isConfiguredPixelId(HS_PORTAL_ID), true);
   assert.equal(isConfiguredPixelId("12345678901234567"), true);
@@ -279,6 +280,63 @@ test("a supplied pixel id can load on a neutral page with a safe referrer", () =
   assert.equal(env.fbqCalls.at(-1)[1], "revoke");
 });
 
+test("real pixel id is intercepted, excluded on treatment pages, and revoke reloads", () => {
+  const treatment = setup({
+    pixelId: META_PIXEL_ID,
+    location: {
+      href: "https://katchapmanrn.com/botox-huntersville",
+      pathname: "/botox-huntersville",
+      search: "",
+      title: "Botox in Huntersville",
+      referrer: "https://www.google.com/",
+    },
+  });
+  treatment.controller.deny();
+  assert.equal(treatment.scripts.length, 0);
+  treatment.controller.grant();
+  assert.equal(treatment.scripts.some((src) => /facebook|googletagmanager/.test(src)), false);
+  assert.equal(treatment.scripts.includes("https://js.hs-scripts.com/22023986.js"), true);
+  const calls = JSON.stringify(treatment.fbqCalls);
+  assert.equal(calls.includes("2738351096678050"), false);
+  assert.equal(calls.includes("patient"), false);
+
+  let reloads = 0;
+  const local = mem();
+  const allowed = setup({
+    pixelId: META_PIXEL_ID,
+    local,
+    reload() { reloads += 1; },
+    location: {
+      href: "https://katchapmanrn.com/about",
+      pathname: "/about",
+      search: "",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
+      referrer: "https://www.google.com/",
+    },
+  });
+  allowed.controller.grant();
+  assert.ok(allowed.scripts.includes("https://connect.facebook.net/en_US/fbevents.js"));
+  const init = allowed.fbqCalls.find((call) => call[0] === "init");
+  assert.deepEqual(init, ["init", "2738351096678050"]);
+  assert.equal(JSON.stringify(allowed.fbqCalls).includes("@"), false);
+  allowed.controller.revoke();
+  assert.equal(reloads, 1);
+  assert.equal(local.get(CONSENT_STORAGE_KEY), "denied");
+  const again = setup({
+    pixelId: META_PIXEL_ID,
+    local,
+    location: {
+      href: "https://katchapmanrn.com/contact",
+      pathname: "/contact",
+      search: "",
+      title: "Contact Kat Chapman, BSN, RN",
+      referrer: "https://katchapmanrn.com/botox-huntersville",
+    },
+  });
+  assert.equal(again.scripts.some((src) => src.includes("facebook")), false);
+  assert.equal(gaText(again.gtagCalls).includes("botox"), false);
+});
+
 test("booking truthfulness rejects clicks, wrong origins, and string flags", () => {
   const good = "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn?embed=true";
   assert.equal(bookingSignalFromMessage({ origin: "https://meetings.hubspot.com", data: { meetingBookSucceeded: true }, iframeSrc: good }).ok, true);
@@ -376,11 +434,15 @@ test("banner uses the humanized labels and the review file matches", () => {
   assert.doesNotMatch(COPY.body, /category and event name only|event name only/i);
   const review = fs.readFileSync(path.join(root, "measurement/CONSENT_COPY_FOR_REVIEW.md"), "utf8");
   for (const value of Object.values(COPY)) assert.match(review, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(review, /second humanizer pass/i);
+  assert.match(review, /follow-up humanizer pass/i);
   assert.doesNotMatch(review, /Chapman Med Spa|Med Spa/i);
   const blog = fs.readFileSync(path.join(root, "measurement/HUBSPOT_BLOG_SNIPPET.html"), "utf8");
   assert.doesNotMatch(blog, /src=["'][^"']*(googletagmanager|hs-scripts\.com)/);
-  assert.match(blog, /Do not add Google Analytics/);
+  assert.match(blog, /Do not add a Google tag/);
+  assert.match(blog, /2738351096678050/);
+  assert.match(fs.readFileSync(path.join(root, "privacy.html"), "utf8"), /Automatic matching stays off/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, "privacy.html"), "utf8"), /automatic event collection stay off/i);
+  assert.match(fs.readFileSync(path.join(root, "book.html"), "utf8"), /The scheduler is on this page\. It works even if measurement is off\./);
   const book = fs.readFileSync(path.join(root, "book.html"), "utf8");
   assert.match(book, /meetings-iframe-container/);
   assert.match(book, /Open the scheduler in a new tab/);
