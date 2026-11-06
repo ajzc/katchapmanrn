@@ -118,14 +118,14 @@ test("production Meta pixel id is the verified dataset and non-numeric ids are r
 test("Meta boot sequence disables auto events and advanced matching", () => {
   const commands = metaBootCommands(TEST_PIXEL);
   assert.deepEqual(commands.map((c) => c[0]), [
-    "consent", "set", "dataProcessingOptions", "init", "consent",
+    "set", "dataProcessingOptions", "init", "consent",
   ]);
-  assert.deepEqual(commands[0], ["consent", "revoke"]);
-  assert.deepEqual(commands[1], ["set", "autoConfig", false, TEST_PIXEL]);
-  assert.deepEqual(commands[2], ["dataProcessingOptions", ["LDU"], 0, 0]);
-  assert.equal(commands[3].length, 2);
-  assert.deepEqual(commands[3], ["init", TEST_PIXEL]);
-  assert.deepEqual(commands[4], ["consent", "grant"]);
+  assert.equal(commands.some((command) => command[0] === "consent" && command[1] === "revoke"), false);
+  assert.deepEqual(commands[0], ["set", "autoConfig", false, TEST_PIXEL]);
+  assert.deepEqual(commands[1], ["dataProcessingOptions", ["LDU"], 0, 0]);
+  assert.equal(commands[2].length, 2);
+  assert.deepEqual(commands[2], ["init", TEST_PIXEL]);
+  assert.deepEqual(commands[3], ["consent", "grant"]);
   assert.equal(metaBootCommands("").length, 0);
   assert.deepEqual(metaTrackCommand("page_view"), { method: "track", name: "PageView" });
   assert.equal(metaTrackCommand("generate_lead"), null);
