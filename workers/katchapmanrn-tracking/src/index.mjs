@@ -5,7 +5,17 @@
  * Do not deploy until Pages is already serving /book and the measurement script.
  */
 
-const BLOG_UPSTREAM = "https://katchapmanrn.pages.dev/blog";
+const PAGES_ORIGIN = "https://katchapmanrn.pages.dev";
+const BLOG_UPSTREAM = PAGES_ORIGIN + "/blog";
+
+/** Pages deploy, not the zone URL. The bare apex `/` was still a stale cached homepage. */
+export function pagesUrl(request) {
+  const incoming = new URL(request.url);
+  const upstream = new URL(PAGES_ORIGIN);
+  upstream.pathname = incoming.pathname;
+  upstream.search = incoming.search;
+  return upstream;
+}
 
 /** Cloudflare's request.cf.country only. Client headers are not a country. */
 export function trustedCountry(request) {
@@ -46,6 +56,6 @@ export default {
       });
     }
 
-    return fetch(request);
+    return fetch(new Request(pagesUrl(request), request), { redirect: "manual" });
   },
 };
