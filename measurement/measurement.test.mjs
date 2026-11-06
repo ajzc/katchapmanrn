@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { META_PIXEL_ID, GA4_MEASUREMENT_ID, HS_PORTAL_ID, CONSENT_STORAGE_KEY } from "./config.mjs";
 import { isConfiguredPixelId, metaInstallPlan, metaBootCommands, metaTrackCommand, cleanFrameTrack } from "./meta.mjs";
 import { sanitizeHref } from "./utm.mjs";
-import { publicPageHit, pageCategory } from "./redact.mjs";
+import { publicPageHit, pageCategory, PREVIOUS_SENSITIVE_KEY } from "./redact.mjs";
 import { buildHubSpotContext, submissionSucceeded, failureReason } from "./forms.mjs";
 import { bookingSignalFromMessage } from "./booking.mjs";
 import { classifyClick } from "./events.mjs";
@@ -182,7 +182,7 @@ test("a US marketing page can use Google without copying a treatment referrer", 
       pathname: "/about",
       search: "?utm_source=instagram",
       title: "Kat Chapman, BSN, RN in Huntersville, NC",
-      referrer: "https://katchapmanrn.com/botox-huntersville",
+      referrer: "https://www.google.com/",
     },
   });
   assert.ok(env.scripts.includes("https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP"));
@@ -191,9 +191,8 @@ test("a US marketing page can use Google without copying a treatment referrer", 
   const text = gaText(env.gtagCalls);
   assert.match(text, /https:\/\/katchapmanrn\.com\/about/);
   assert.equal(text.includes("botox"), false);
-  assert.equal(text.includes("/botox-huntersville"), false);
   const config = env.gtagCalls.find((c) => c[0] === "config");
-  assert.equal(config[2].page_referrer, "https://katchapmanrn.com");
+  assert.equal(config[2].page_referrer, "https://www.google.com/");
   assert.equal(config[2].send_page_view, false);
   assert.equal(config[2].allow_google_signals, false);
   assert.equal(config[2].ad_storage, undefined);
@@ -201,8 +200,84 @@ test("a US marketing page can use Google without copying a treatment referrer", 
   env.controller.reportForm("contact", true);
   const lead = env.gtagCalls.find((c) => c[1] === "generate_lead");
   assert.deepEqual(lead[2], { form_id: "contact", lead_source: "hubspot_form" });
-  assert.equal(JSON.stringify(lead).includes("botox"), false);
   assert.equal(JSON.stringify(env.fbqCalls).includes("Lead"), false);
+});
+
+test("sensitive previous URL or query keeps Google, HubSpot, and Meta off", () => {
+  const cases = [
+    {
+      href: "https://katchapmanrn.com/about",
+      pathname: "/about",
+      search: "",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
+      referrer: "https://katchapmanrn.com/botox-huntersville",
+    },
+    {
+      href: "https://katchapmanrn.com/about?utm_campaign=lip-filler",
+      pathname: "/about",
+      search: "?utm_campaign=lip-filler",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
+      referrer: "https://www.google.com/",
+    },
+    {
+      href: "https://katchapmanrn.com/gallery?email=patient@example.com",
+      pathname: "/gallery",
+      search: "?email=patient@example.com",
+      title: "Before and After Results",
+      referrer: "",
+    },
+  ];
+  for (const location of cases) {
+    const env = setup({ country: "US", pixelId: TEST_PIXEL, location });
+    assert.equal(env.scripts.length, 0, location.href);
+    assert.equal(env.gtagCalls.length, 0, location.href);
+    assert.equal(env.fbqCalls.length, 0, location.href);
+    assert.equal(publicPageHit(location), null, location.href);
+  }
+});
+
+test("a later safe page stays off after a sensitive page hid its path", () => {
+  const session = mem();
+  setup({
+    country: "US",
+    session,
+    location: {
+      href: "https://katchapmanrn.com/botox-huntersville",
+      pathname: "/botox-huntersville",
+      search: "",
+      title: "Botox in Huntersville",
+      referrer: "",
+    },
+  });
+  assert.equal(session.get(PREVIOUS_SENSITIVE_KEY), "1");
+  const next = setup({
+    country: "US",
+    pixelId: TEST_PIXEL,
+    session,
+    location: {
+      href: "https://katchapmanrn.com/about",
+      pathname: "/about",
+      search: "",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
+      referrer: "https://katchapmanrn.com",
+    },
+  });
+  assert.equal(next.scripts.length, 0);
+  assert.equal(session.get(PREVIOUS_SENSITIVE_KEY), "0");
+  const after = setup({
+    country: "US",
+    pixelId: TEST_PIXEL,
+    session,
+    location: {
+      href: "https://katchapmanrn.com/gallery",
+      pathname: "/gallery",
+      search: "",
+      title: "Before and After Results",
+      referrer: "https://katchapmanrn.com/about",
+    },
+  });
+  assert.ok(after.scripts.includes("https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP"));
+  assert.equal(after.scripts.some((src) => src.includes("facebook")), true);
 });
 
 test("denied consent still keeps the CRM form and omits the HubSpot cookie", () => {
@@ -238,9 +313,9 @@ test("a supplied pixel id stays unloaded on a treatment page and its referrer", 
       referrer: "https://katchapmanrn.com/lip-filler-huntersville",
     },
   });
-  assert.equal(fromTreatment.scripts.some((src) => src.includes("facebook")), false);
-  assert.equal(gaText(fromTreatment.gtagCalls).includes("lip-filler"), false);
-  assert.equal(fromTreatment.gtagCalls.find((c) => c[0] === "config")[2].page_referrer, "https://katchapmanrn.com");
+  assert.equal(fromTreatment.scripts.length, 0);
+  assert.equal(fromTreatment.gtagCalls.length, 0);
+  assert.equal(fromTreatment.fbqCalls.length, 0);
 });
 
 test("a supplied pixel id can load on a US marketing page with a safe referrer", () => {
@@ -384,13 +459,18 @@ test("treatment pages produce no ad hit and neutral pages drop treatment referre
     title: "Botox and Filler FAQ in Huntersville, NC",
     referrer: "",
   }), null);
-  const hit = publicPageHit({
+  assert.equal(publicPageHit({
     href: "https://katchapmanrn.com/about?utm_source=instagram",
     title: "Kat Chapman, BSN, RN in Huntersville, NC",
     referrer: "https://katchapmanrn.com/botox-huntersville",
+  }), null);
+  const hit = publicPageHit({
+    href: "https://katchapmanrn.com/about?utm_source=instagram",
+    title: "Kat Chapman, BSN, RN in Huntersville, NC",
+    referrer: "https://www.google.com/",
   });
   assert.equal(hit.page_location, "https://katchapmanrn.com/about?utm_source=instagram");
-  assert.equal(hit.page_referrer, "https://katchapmanrn.com");
+  assert.equal(hit.page_referrer, "https://www.google.com/");
   assert.equal(JSON.stringify(hit).includes("botox"), false);
 });
 
@@ -483,9 +563,11 @@ test("notice copy is unreviewed and the old opt-in claim stays out of the notice
   assert.doesNotMatch(COPY.notice, /until you allow|Allow measurement|category and event name only/i);
   const review = fs.readFileSync(path.join(root, "measurement/CONSENT_COPY_FOR_REVIEW.md"), "utf8");
   for (const value of Object.values(COPY)) assert.match(review, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(review, /NOT PUBLISHED/);
-  assert.match(review, /follow-up humanizer pass/i);
-  assert.match(fs.readFileSync(path.join(root, "privacy.html"), "utf8"), /until you choose Allow measurement/);
+  assert.match(review, /published in privacy\.html/i);
+  const privacy = fs.readFileSync(path.join(root, "privacy.html"), "utf8");
+  assert.match(privacy, /They also stay off when the previous page URL or the current URL's query contains sensitive information\./);
+  assert.match(privacy, /The blog uses HubSpot analytics\. Google Analytics and Meta are off on the blog\./);
+  assert.doesNotMatch(privacy, /HubSpot analytics are off on the blog|no HubSpot on the blog/i);
   assert.doesNotMatch(review, /Chapman Med Spa|Med Spa/i);
   const blog = fs.readFileSync(path.join(root, "measurement/HUBSPOT_BLOG_SNIPPET.html"), "utf8");
   assert.doesNotMatch(blog, /src=["'][^"']*(googletagmanager|hs-scripts\.com)/);

@@ -28,11 +28,21 @@ const blocked = [
   "*fonts.gstatic.com*",
 ];
 
+let contextCountry = "";
+
 function startServer() {
   const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json", ".txt": "text/plain" };
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url, "http://127.0.0.1");
+      if (url.pathname === "/measurement/context") {
+        res.writeHead(200, {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "private, no-store",
+        });
+        res.end(JSON.stringify({ country: contextCountry }));
+        return;
+      }
       let name = decodeURIComponent(url.pathname);
       if (name.endsWith("/")) name += "index.html";
       const file = path.normalize(path.join(root, name));
@@ -52,6 +62,7 @@ function startServer() {
       });
     });
     server.listen(0, "127.0.0.1", () => resolve(server));
+    server.setContextCountry = (value) => { contextCountry = value; };
   });
 }
 
@@ -239,14 +250,12 @@ async function main() {
     check(await evaluate("document.querySelector('.book-fallback a').href.indexOf('meetings.hubspot.com') !== -1"), "direct scheduler fallback remains");
 
     await session.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "try{localStorage.removeItem('kcrn_measure_consent')}catch(e){}",
+      source: "try{localStorage.removeItem('kcrn_measure_consent');if(!sessionStorage.getItem('kcrn_us_checked')){sessionStorage.removeItem('kcrn_prev_sensitive');sessionStorage.setItem('kcrn_us_checked','1');}}catch(e){}",
     });
-    await session.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "(function(){var add=function(){if(!document.head||document.querySelector('meta[name=\"kcrn-country\"]'))return;var m=document.createElement('meta');m.setAttribute('name','kcrn-country');m.setAttribute('content','US');document.head.insertBefore(m, document.head.firstChild);};add();new MutationObserver(add).observe(document,{childList:true,subtree:true});})();",
-    });
+    server.setContextCountry("US");
     await go("/about.html");
     await waitFor("!!document.getElementById('kcrn-ga') && !!document.getElementById('kcrn-measure-turn-off')");
-    check(await evaluate("document.getElementById('kcrn-measure').innerText.indexOf('Google, HubSpot, and Meta measure this page. Opt out any time.') !== -1"), "US marketing page shows the measurement notice");
+    check(await evaluate("document.getElementById('kcrn-measure').innerText.indexOf('We use Google, HubSpot, and, when configured, Meta to measure this page. You can opt out at any time.') !== -1"), "US marketing page shows the measurement notice");
     check(await evaluate("document.getElementById('kcrn-measure-turn-off').textContent") === "Keep measurement off", "opt-out label");
     check(await evaluate("document.getElementById('kcrn-measure-privacy').getAttribute('href')") === "/privacy", "notice links to privacy");
     check(await evaluate("!document.querySelector('#kcrn-measure [role=dialog]') && !document.getElementById('kcrn-measure-allow')"), "notice is not a consent popup");
@@ -255,9 +264,13 @@ async function main() {
     check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]') && !document.getElementById('kcrn-measure')"), "a US form page stays unmeasured");
     await go("/botox-huntersville.html");
     check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]')"), "a US treatment page stays unmeasured");
+    await go("/about.html");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]')"), "a sensitive previous page keeps the next page off");
     await go("/gallery.html");
     await waitFor("!!document.getElementById('kcrn-measure-turn-off')");
     check(await evaluate("!!document.getElementById('kcrn-ga')"), "gallery can be measured for a US visitor");
+    await go("/about.html?utm_campaign=lip-filler");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]')"), "a sensitive query keeps measurement off");
   } finally {
     chrome.kill("SIGKILL");
     server.close();

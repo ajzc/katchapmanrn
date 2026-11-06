@@ -74,6 +74,22 @@ export function leaksTreatment(value) {
   return TREATMENT.test(String(value || ""));
 }
 
+const EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+/** Treatment wording or an email address in a URL, path, or query. */
+export function containsSensitiveInformation(value) {
+  const text = String(value || "");
+  return leaksTreatment(text) || EMAIL.test(text);
+}
+
+export const PREVIOUS_SENSITIVE_KEY = "kcrn_prev_sensitive";
+
+/** The next page stays off after a treatment, booking, consult, form, or sensitive URL. */
+export function pageMarksNextVisitSensitive({ pathname, search, title, href }) {
+  if (!isSafeMarketingPath(pathname)) return true;
+  return containsSensitiveInformation(pathname) || containsSensitiveInformation(search) || containsSensitiveInformation(title) || containsSensitiveInformation(href);
+}
+
 function ownHost(hostname) {
   const host = String(hostname || "").replace(/^www\./, "");
   return host === ADS_HOST || host === "blog." + ADS_HOST;
@@ -99,7 +115,8 @@ export function publicPageHit({ href, title, referrer }) {
   let u;
   try { u = new URL(href, "https://" + ADS_HOST); } catch { return null; }
   if (!isSafeMarketingPath(u.pathname) || leaksTreatment(u.pathname)) return null;
-  if (leaksTreatment(title)) return null;
+  if (leaksTreatment(title) || containsSensitiveInformation(title)) return null;
+  if (containsSensitiveInformation(u.search) || containsSensitiveInformation(referrer)) return null;
   const clean = new URL(sanitizeHref(u.href));
   const kept = new URLSearchParams();
   for (const [key, value] of clean.searchParams.entries()) {
@@ -121,8 +138,8 @@ export function metaAudienceAllowed({ href, referrer }) {
   let u;
   try { u = new URL(href, "https://" + ADS_HOST); } catch { return false; }
   if (!isSafeMarketingPath(u.pathname)) return false;
-  if (leaksTreatment(u.pathname) || leaksTreatment(u.search)) return false;
-  if (referrer && (leaksTreatment(referrer) || referrerNamesTreatmentPage(referrer))) return false;
+  if (containsSensitiveInformation(u.pathname) || containsSensitiveInformation(u.search)) return false;
+  if (referrer && (containsSensitiveInformation(referrer) || referrerNamesTreatmentPage(referrer))) return false;
   return true;
 }
 

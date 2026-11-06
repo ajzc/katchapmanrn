@@ -76,27 +76,38 @@ test("HTML keeps a consent banner and other paths are unchanged", async () => {
   });
 });
 
-test("country meta is added only for a real country code", async () => {
+function requestWithCountry(url, country, headers) {
+  const request = new Request(url, { headers });
+  if (country) Object.defineProperty(request, "cf", { value: { country } });
+  return request;
+}
+
+test("country context is per request and ignores a spoofed header", async () => {
   assert.equal(trustedCountry({ cf: { country: "US" }, headers: { get: () => "GB" } }), "US");
   assert.equal(trustedCountry({ cf: { country: "XX" }, headers: { get: () => "US" } }), "");
   assert.equal(trustedCountry({ cf: { country: "T1" }, headers: { get: () => "US" } }), "");
-  assert.equal(trustedCountry({ headers: { get: () => "gb" } }), "GB");
-  assert.equal(trustedCountry({ headers: { get: () => "" } }), "");
+  assert.equal(trustedCountry({ headers: { get: () => "US" } }), "");
   const html = "<head><title>About</title></head><div id=\"consent\">Allow measurement</div>";
   await withFetch(async () => new Response(html, {
     status: 200,
-    headers: { "content-type": "text/html; charset=utf-8" },
-  }), async () => {
-    const us = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "US" } }));
-    const body = await us.text();
-    assert.match(body, /<meta name="kcrn-country" content="US">/);
-    assert.match(body, /id="consent"/);
-    const gb = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "GB" } }));
-    assert.match(await gb.text(), /content="GB"/);
-    const unknown = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "XX" } }));
-    const plain = await unknown.text();
-    assert.equal(plain.includes("kcrn-country"), false);
-    assert.match(plain, /id="consent"/);
+    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=600" },
+  }), async (calls) => {
+    const us = await worker.fetch(requestWithCountry("https://katchapmanrn.com/measurement/context", "US", { "CF-IPCountry": "GB" }));
+    assert.equal(us.headers.get("cache-control"), "private, no-store");
+    assert.equal(us.headers.get("cdn-cache-control"), "no-store");
+    assert.deepEqual(await us.json(), { country: "US" });
+    const gb = await worker.fetch(requestWithCountry("https://katchapmanrn.com/measurement/context", "GB", { "CF-IPCountry": "US" }));
+    assert.deepEqual(await gb.json(), { country: "GB" });
+    const spoofed = await worker.fetch(new Request("https://katchapmanrn.com/measurement/context", { headers: { "CF-IPCountry": "US" } }));
+    assert.deepEqual(await spoofed.json(), { country: "" });
+    const unknown = await worker.fetch(requestWithCountry("https://katchapmanrn.com/measurement/context", "XX"));
+    assert.deepEqual(await unknown.json(), { country: "" });
+    assert.equal(calls.length, 0);
+    const page = await worker.fetch(requestWithCountry("https://katchapmanrn.com/about", "US", { "CF-IPCountry": "GB" }));
+    const body = await page.text();
+    assert.equal(body, html);
+    assert.equal(body.includes("kcrn-country"), false);
+    assert.equal(page.headers.get("cache-control"), "public, max-age=600");
   });
 });
 

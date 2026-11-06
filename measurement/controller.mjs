@@ -1,8 +1,8 @@
 import { GA4_MEASUREMENT_ID, HS_PORTAL_ID, LINKER_DOMAINS, META_PIXEL_ID, CONSENT_STORAGE_KEY, UTM_STORAGE_KEY } from "./config.mjs";
 import { metaBootCommands, metaInstallPlan, metaTrackCommand, META_SCRIPT_URL } from "./meta.mjs";
 import { sanitizeHref, readAllowlistedUtms, mergeFirstTouch, appendUtms } from "./utm.mjs";
-import { metaAudienceAllowed } from "./redact.mjs";
-import { measurementAllowed } from "./region.mjs";
+import { metaAudienceAllowed, pageMarksNextVisitSensitive, containsSensitiveInformation, PREVIOUS_SENSITIVE_KEY } from "./redact.mjs";
+import { measurementAllowed, trustedCountryCode } from "./region.mjs";
 import { buildHubSpotContext } from "./forms.mjs";
 import { bookingSignalFromMessage, matchingIframeSrc } from "./booking.mjs";
 import { classifyClick, pageViewEvent, clickEvent, formEvent, bookingEvent } from "./events.mjs";
@@ -127,7 +127,17 @@ export function createController(deps) {
     });
   }
 
+  let arrivalBlocked = false;
+  function noteArrival() {
+    const loc = location();
+    const previous = deps.session.get(PREVIOUS_SENSITIVE_KEY) === "1";
+    const markNext = pageMarksNextVisitSensitive(loc);
+    deps.session.set(PREVIOUS_SENSITIVE_KEY, markNext ? "1" : "0");
+    arrivalBlocked = previous || containsSensitiveInformation(loc.href) || containsSensitiveInformation(loc.referrer);
+  }
+
   function loadTags() {
+    if (arrivalBlocked) return;
     const page = location();
     const view = pageViewEvent(page);
     if (!view) return;
@@ -186,10 +196,11 @@ export function createController(deps) {
     if (view) emit(view);
   }
 
+  noteArrival();
   sanitize();
   captureUtms();
   const stored = deps.local.get(CONSENT_STORAGE_KEY);
-  if (regionOk() && pageViewEvent(location())) activate();
+  if (!arrivalBlocked && regionOk() && pageViewEvent(location())) activate();
   else {
     consent = (stored === "denied" || (deps.gpc && deps.gpc())) ? "denied" : "off";
     bannerOpen = false;
@@ -202,8 +213,14 @@ export function createController(deps) {
     isBannerOpen() { return bannerOpen; },
     openBanner() { bannerOpen = true; },
     closeBanner() { bannerOpen = false; },
+    applyCountry() {
+      if (consent === "denied" || consent === "granted") return false;
+      if (arrivalBlocked || !(regionOk() && pageViewEvent(location()))) return false;
+      activate();
+      return true;
+    },
     grant() {
-      if (!regionOk() || !pageViewEvent(location())) return;
+      if (arrivalBlocked || !regionOk() || !pageViewEvent(location())) return;
       if (consent === "granted") {
         bannerOpen = false;
         return;
@@ -292,14 +309,12 @@ export function attachMeasurement(window, document) {
     get(k) { try { return window.sessionStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { window.sessionStorage.setItem(k, v); } catch { /* private mode */ } },
   };
+  let countryCode = "";
   const controller = createController({
     metaPixelId: META_PIXEL_ID,
     local,
     session,
-    country() {
-      const meta = document.querySelector('meta[name="kcrn-country"]');
-      return meta ? meta.getAttribute("content") || "" : "";
-    },
+    country() { return countryCode; },
     gpc() {
       return window.navigator && window.navigator.globalPrivacyControl === true;
     },
@@ -374,6 +389,17 @@ export function attachMeasurement(window, document) {
   restoreFormDraft(document, window);
 
   mountBanner(document, controller);
+  const readContext = window.fetch
+    ? window.fetch("/measurement/context", { cache: "no-store", credentials: "same-origin" })
+    : Promise.reject();
+  readContext.then((response) => {
+    if (!response || !response.ok) return "";
+    return response.json();
+  }).then((data) => {
+    const code = trustedCountryCode(data && data.country);
+    countryCode = code;
+    if (controller.applyCountry()) mountBanner(document, controller);
+  }).catch(() => {});
   document.addEventListener("click", (event) => {
     const anchor = event.target && event.target.closest ? event.target.closest("a[href]") : null;
     if (anchor) controller.handleAnchor(anchor);
