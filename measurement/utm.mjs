@@ -1,4 +1,4 @@
-import { UTM_KEYS } from "./config.mjs";
+import { CLICK_KEYS, UTM_KEYS } from "./config.mjs";
 
 export function isSafeUtm(value) {
   if (typeof value !== "string") return false;
@@ -14,6 +14,10 @@ export function isSafeGl(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 800 && /^[A-Za-z0-9._~\-]+$/.test(value);
 }
 
+export function isSafeClickId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9._~\-]+$/.test(value);
+}
+
 /** Drop identifiers and contact fields from a query string. Keep safe UTMs and _gl. */
 export function sanitizeHref(href) {
   let u;
@@ -21,6 +25,7 @@ export function sanitizeHref(href) {
   const next = new URLSearchParams();
   for (const [key, value] of u.searchParams.entries()) {
     if (UTM_KEYS.includes(key) && isSafeUtm(value)) next.append(key, value.trim());
+    else if (CLICK_KEYS.includes(key) && isSafeClickId(value)) next.append(key, value);
     else if (key === "_gl" && isSafeGl(value)) next.append(key, value);
   }
   const search = next.toString();

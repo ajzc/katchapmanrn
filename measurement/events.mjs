@@ -1,11 +1,23 @@
-import { redactForAds } from "./redact.mjs";
+import { publicPageHit } from "./redact.mjs";
 
 const KINDS = new Set(["call", "text", "book"]);
+
+/** Same-site /book is a real page view, not an extra outbound event. */
+export function isSiteBookingPath(href) {
+  try {
+    const u = new URL(href, "https://katchapmanrn.com");
+    const path = u.pathname.replace(/\.html$/, "").replace(/\/$/, "") || "/";
+    return path === "/book";
+  } catch {
+    return false;
+  }
+}
 
 export function classifyClick(href, hasBookAttr) {
   const h = String(href || "").trim().toLowerCase();
   if (h.startsWith("tel:")) return "call";
   if (h.startsWith("sms:")) return "text";
+  if (isSiteBookingPath(href)) return null;
   if (hasBookAttr || h.includes("meetings.hubspot.com")) return "book";
   return null;
 }
@@ -17,7 +29,7 @@ export function pageViewEvent(page) {
     conversion: false,
     ga: true,
     meta: true,
-    params: redactForAds(page),
+    params: publicPageHit(page),
   };
 }
 

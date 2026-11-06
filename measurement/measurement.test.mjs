@@ -7,12 +7,11 @@ import { fileURLToPath } from "node:url";
 import { META_PIXEL_ID, GA4_MEASUREMENT_ID, HS_PORTAL_ID } from "./config.mjs";
 import { isConfiguredPixelId, metaInstallPlan, metaBootCommands, metaTrackCommand, cleanFrameTrack } from "./meta.mjs";
 import { sanitizeHref } from "./utm.mjs";
-import { redactForAds, pageCategory } from "./redact.mjs";
+import { publicPageHit, pageCategory } from "./redact.mjs";
 import { buildHubSpotContext, submissionSucceeded, failureReason } from "./forms.mjs";
 import { bookingSignalFromMessage } from "./booking.mjs";
 import { classifyClick } from "./events.mjs";
 import { createController } from "./controller.mjs";
-import { createMetaFrame } from "./meta-mount.mjs";
 import { COPY, bannerModel } from "./copy.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,9 +49,8 @@ function setup(overrides = {}) {
   const gtagCalls = [];
   const hsq = [];
   const hsp = [];
-  const posts = [];
-  let frameHandlers = null;
-  let destroyed = false;
+  const fbqCalls = [];
+  let fbqFn = null;
   let loc = {
     href: "https://katchapmanrn.com/botox-huntersville?utm_source=instagram&utm_campaign=lip-filler&email=patient@example.com&gclid=CLICKID&fbclid=FB123",
     pathname: "/botox-huntersville",
@@ -77,13 +75,12 @@ function setup(overrides = {}) {
     hsq,
     hsp,
     setDataset(name, value) { dataset[name] = value; },
-    mountMetaFrame(handlers) {
-      frameHandlers = handlers;
-      return {
-        post(data) { posts.push(data); },
-        destroy() { destroyed = true; },
-      };
+    ensureFbq() {
+      function fbq() { fbqCalls.push(Array.from(arguments)); }
+      fbq.disablePushState = false;
+      fbqFn = fbq;
     },
+    get fbq() { return fbqFn; },
   });
   return {
     controller,
@@ -91,11 +88,9 @@ function setup(overrides = {}) {
     gtagCalls,
     hsq,
     hsp,
-    posts,
+    fbqCalls,
     dataset,
     get loc() { return loc; },
-    ready(data) { frameHandlers.onFrameMessage(data); },
-    get destroyed() { return destroyed; },
   };
 }
 
@@ -106,9 +101,11 @@ function gaText(gtagCalls) {
 test("production Meta pixel id is empty and known non-pixel ids are rejected", () => {
   assert.equal(META_PIXEL_ID, "");
   assert.equal(metaInstallPlan("", "granted").reason, "missing_id");
-  assert.equal(metaInstallPlan(HS_PORTAL_ID, "granted").load, false);
+  assert.equal(isConfiguredPixelId(HS_PORTAL_ID), true);
+  assert.equal(isConfiguredPixelId("12345678901234567"), true);
   assert.equal(isConfiguredPixelId(GA4_MEASUREMENT_ID), false);
-  assert.equal(isConfiguredPixelId("12345"), false);
+  assert.equal(isConfiguredPixelId("12345"), true);
+  assert.equal(isConfiguredPixelId("123,456"), false);
   assert.equal(isConfiguredPixelId(TEST_PIXEL), true);
   assert.equal(metaInstallPlan(TEST_PIXEL, "denied").reason, "consent_required");
   assert.equal(metaInstallPlan(TEST_PIXEL, "granted").reason, "ready");
@@ -146,79 +143,12 @@ test("Meta boot sequence disables auto events and advanced matching", () => {
   });
 });
 
-test("isolated frame boots a test id without parent page data and ignores junk", () => {
-  const html = fs.readFileSync(path.join(root, "measurement/meta-frame.html"), "utf8");
-  assert.match(html, /noindex/);
-  assert.doesNotMatch(html, /parent\.document|parent\.location/);
-  assert.doesNotMatch(html, /botox|patient@|TITLETOKEN/i);
-  const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
-  const calls = [];
-  const scripts = [];
-  const parent = { postMessage() {} };
-  const win = {
-    parent,
-    document: {
-      getElementById() { return null; },
-      createElement() { return {}; },
-      head: { appendChild(el) { scripts.push(el.src); } },
-    },
-    addEventListener() {},
-  };
-  vm.runInNewContext(script, { window: win });
-  const parentEvent = (data, origin = "https://katchapmanrn.com") => win.__kcrnHandleMetaMessage({
-    source: parent,
-    origin,
-    data,
-  });
-  assert.equal(parentEvent({ source: "kcrn-measure", command: "boot", pixelId: HS_PORTAL_ID }), false);
-  assert.equal(scripts.length, 0);
-  assert.equal(parentEvent({ source: "other", command: "boot", pixelId: TEST_PIXEL }), false);
-  assert.equal(parentEvent({
-    source: "kcrn-measure",
-    command: "track",
-    method: "track",
-    name: "PageView",
-    params: { page: "/botox-huntersville" },
-  }), true);
-  assert.equal(parentEvent({ source: "kcrn-measure", command: "boot", pixelId: TEST_PIXEL }), true);
-  assert.deepEqual(scripts, ["https://connect.facebook.net/en_US/fbevents.js"]);
-  const init = callsFrom(win).find((c) => c[0] === "init");
-  assert.deepEqual(init, ["init", TEST_PIXEL]);
-  assert.equal(parentEvent({ source: "kcrn-measure", command: "boot", pixelId: TEST_PIXEL }, "https://evil.test"), false);
-  parentEvent({
-    source: "kcrn-measure",
-    command: "track",
-    method: "trackCustom",
-    name: "OutboundClick",
-    params: { link_kind: "text", email: "a@b.com", date: "2026-12-01" },
-  });
-  parentEvent({
-    source: "kcrn-measure",
-    command: "track",
-    method: "track",
-    name: "Schedule",
-    params: { date: "2026-12-01", meetingsPayload: { email: "a@b.com" } },
-  });
-  const fbqCalls = callsFrom(win);
-  assert.ok(fbqCalls.some((c) => c[0] === "track" && c[1] === "PageView" && c.length === 2));
-  assert.ok(fbqCalls.some((c) => c[0] === "trackCustom" && c[1] === "OutboundClick" && c[2].link_kind === "text" && Object.keys(c[2]).length === 1));
-  const schedule = fbqCalls.find((c) => c[1] === "Schedule");
-  assert.deepEqual(schedule, ["track", "Schedule"]);
-  assert.equal(JSON.stringify(fbqCalls).includes("botox"), false);
-  assert.equal(JSON.stringify(fbqCalls).includes("a@b.com"), false);
-  assert.equal(JSON.stringify(fbqCalls).includes("2026-12-01"), false);
-});
-
-function callsFrom(win) {
-  return win.fbq && win.fbq.queue ? win.fbq.queue.map((args) => Array.from(args)) : [];
-}
-
-test("consent gates tags, redacts ads hits, and does not load Meta without an id", () => {
+test("consent gates tags and keeps the real page address", () => {
   const env = setup({ hutk: "HUTKVALUE123" });
   assert.equal(env.dataset.measurementMeta, "unconfigured");
   assert.equal(env.scripts.length, 0);
   assert.equal(env.loc.search.includes("email="), false);
-  assert.equal(env.loc.search.includes("gclid="), false);
+  assert.equal(env.loc.search.includes("gclid=CLICKID"), true);
   assert.equal(env.loc.search.includes("utm_campaign=lip-filler"), true);
   assert.equal(env.loc.pathname, "/botox-huntersville");
 
@@ -236,11 +166,10 @@ test("consent gates tags, redacts ads hits, and does not load Meta without an id
   ]);
   assert.equal(env.scripts.some((src) => src.includes("facebook")), false);
   const text = gaText(env.gtagCalls);
-  for (const leaked of ["botox", "titleToken", "lip-filler", "patient@", "gclid", "fbclid", "huntersville", "hutkvalue123", "2026-"]) {
-    assert.equal(text.includes(leaked), false, leaked);
-  }
-  assert.match(text, /https:\/\/katchapmanrn\.com\/p\/local/);
-  assert.match(text, /kat chapman rn/);
+  assert.match(text, /\/botox-huntersville/);
+  assert.match(text, /titleToken/i);
+  assert.equal(text.includes("patient@"), false);
+  assert.equal(text.includes("hutkvalue123"), false);
   assert.equal(env.gtagCalls.filter((c) => c[0] === "event" && c[1] === "page_view").length, 1);
   const update = env.gtagCalls.find((c) => c[0] === "consent" && c[1] === "update");
   assert.equal(update[2].analytics_storage, "granted");
@@ -276,7 +205,7 @@ test("consent gates tags, redacts ads hits, and does not load Meta without an id
   assert.deepEqual(lead[2], { form_id: "contact", lead_source: "hubspot_form" });
   assert.equal(env.controller.reportForm("contact", false, "rejected"), true);
   assert.equal(env.gtagCalls.filter((c) => c[1] === "form_submit_failed").length, 1);
-  assert.equal(gaText(env.gtagCalls).includes("titleToken"), false);
+  assert.equal(JSON.stringify(lead).includes("patient@"), false);
 
   const beforeRevoke = env.gtagCalls.length;
   env.controller.revoke();
@@ -291,41 +220,47 @@ test("consent gates tags, redacts ads hits, and does not load Meta without an id
   assert.equal(env.gtagCalls.filter((c) => c[1] === "page_view").length, 2);
 });
 
-test("denied consent never loads tags and omits the HubSpot cookie", () => {
+test("denied consent still keeps the CRM form and omits the HubSpot cookie", () => {
   const env = setup({ hutk: "HUTKVALUE123" });
   env.controller.deny();
   assert.equal(env.scripts.length, 0);
-  assert.deepEqual(env.controller.buildFormContext("Contact"), { pageName: "Contact" });
+  const fields = [
+    { name: "email", value: "qa-measurement@example.com" },
+    { name: "message", value: "lip filler on 2026-12-01" },
+  ];
+  const body = { fields, context: env.controller.buildFormContext("Contact Kat Chapman RN") };
+  assert.equal(body.fields[0].value, "qa-measurement@example.com");
+  assert.equal(body.context.hutk, undefined);
   assert.equal(env.controller.reportForm("contact", true), false);
   assert.equal(env.gtagCalls.length, 0);
+  assert.equal(env.fbqCalls.length, 0);
 });
 
-test("a supplied pixel id posts boot and neutral events only after the frame is ready", () => {
+test("a supplied pixel id loads on the real page and does not receive form text", () => {
   const env = setup({ pixelId: TEST_PIXEL });
   assert.equal(env.dataset.measurementMeta, "configured");
   env.controller.grant();
-  assert.equal(env.posts.length, 0);
-  assert.equal(env.scripts[0].includes("googletagmanager"), true);
-  env.ready({ source: "kcrn-measure", command: "ready" });
-  assert.equal(env.posts[0].command, "boot");
-  assert.equal(env.posts[0].pixelId, TEST_PIXEL);
-  assert.equal(env.posts.some((p) => p.name === "PageView" && !p.params), true);
-  assert.equal(JSON.stringify(env.posts).includes("botox"), false);
-  assert.equal(JSON.stringify(env.posts).includes("TITLETOKEN"), false);
+  assert.equal(env.scripts[0], "https://connect.facebook.net/en_US/fbevents.js");
+  const init = env.fbqCalls.find((call) => call[0] === "init");
+  assert.deepEqual(init, ["init", TEST_PIXEL]);
+  const page = env.fbqCalls.find((call) => call[1] === "PageView");
+  assert.equal(page.length, 2);
   env.controller.handleAnchor({ href: "tel:+17045849785", hasAttribute: () => false, setAttribute() {} });
-  const click = env.posts.find((p) => p.name === "OutboundClick");
-  assert.deepEqual(click.params, { link_kind: "call" });
+  const click = env.fbqCalls.find((call) => call[1] === "OutboundClick");
+  assert.deepEqual(click[2], { link_kind: "call" });
+  assert.equal(classifyClick("https://katchapmanrn.com/book", true), null);
   assert.equal(env.controller.onBookingMessage({
     origin: "https://meetings.hubspot.com",
     source: "frame-win",
     data: { meetingBookSucceeded: true, meetingsPayload: { email: "a@b.com", dateString: "2026-12-01" } },
   }, [{ contentWindow: "frame-win", src: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn?embed=true" }]), true);
-  const schedule = env.posts.find((p) => p.name === "Schedule");
-  assert.equal(schedule.params, undefined);
-  assert.equal(JSON.stringify(env.posts).includes("a@b.com"), false);
+  const schedule = env.fbqCalls.find((call) => call[1] === "Schedule");
+  assert.deepEqual(schedule, ["track", "Schedule"]);
+  assert.equal(JSON.stringify(env.fbqCalls).includes("a@b.com"), false);
+  assert.equal(JSON.stringify(env.fbqCalls).includes("2026-12-01"), false);
   env.controller.revoke();
-  assert.equal(env.destroyed, true);
-  assert.equal(env.posts.at(-1).command, "revoke");
+  assert.equal(env.fbqCalls.at(-1)[0], "consent");
+  assert.equal(env.fbqCalls.at(-1)[1], "revoke");
 });
 
 test("booking truthfulness rejects clicks, wrong origins, and string flags", () => {
@@ -341,6 +276,8 @@ test("booking truthfulness rejects clicks, wrong origins, and string flags", () 
   assert.equal(classifyClick("https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn", false), "book");
   assert.equal(classifyClick("tel:+17045849785", false), "call");
   assert.equal(classifyClick("sms:+17045849785", false), "text");
+  assert.equal(classifyClick("https://katchapmanrn.com/book", true), null);
+  assert.equal(classifyClick("/book", true), null);
   const result = bookingSignalFromMessage({
     origin: "https://meetings.hubspot.com",
     data: { meetingBookSucceeded: true, meetingsPayload: { email: "hidden@example.com" } },
@@ -349,21 +286,22 @@ test("booking truthfulness rejects clicks, wrong origins, and string flags", () 
   assert.deepEqual(result, { ok: true });
 });
 
-test("ads redaction collapses every public template and strips the query", () => {
+test("public hits keep the real page and strip contact query values", () => {
   assert.equal(pageCategory("/"), "home");
   assert.equal(pageCategory("/contact"), "contact");
   assert.equal(pageCategory("/blog/is-botox-safe-for-first-timers"), "article");
   assert.equal(pageCategory("/botox-huntersville"), "local");
   assert.equal(pageCategory("/404.html"), "not_found");
-  const redacted = redactForAds({
-    href: "https://katchapmanrn.com/lip-filler-mooresville?email=a@b.com&date=2026-11-06",
-    referrer: "https://blog.katchapmanrn.com/blog/is-botox-safe-for-first-timers?q=1",
+  const hit = publicPageHit({
+    href: "https://katchapmanrn.com/lip-filler-mooresville?email=a@b.com&utm_source=google&date=2026-11-06",
+    title: "Lip filler in Mooresville | Kat Chapman RN",
+    referrer: "https://www.google.com/search?q=lip+filler",
   });
-  assert.equal(redacted.page_location, "https://katchapmanrn.com/p/local");
-  assert.equal(redacted.page_title, "Kat Chapman RN");
-  assert.equal(redacted.page_referrer, "https://blog.katchapmanrn.com");
-  assert.equal(JSON.stringify(redacted).includes("lip"), false);
-  assert.equal(JSON.stringify(redacted).includes("botox"), false);
+  assert.equal(hit.page_location, "https://katchapmanrn.com/lip-filler-mooresville?utm_source=google");
+  assert.equal(hit.page_title, "Lip filler in Mooresville | Kat Chapman RN");
+  assert.equal(hit.page_referrer, "https://www.google.com/search");
+  assert.equal(JSON.stringify(hit).includes("a@b.com"), false);
+  assert.equal(JSON.stringify(hit).includes("2026-11-06"), false);
 });
 
 test("HubSpot form context stays on supported fields", () => {
@@ -392,39 +330,36 @@ test("inline URL sanitizer matches the module", () => {
   for (const href of samples) assert.equal(sandbox.kcrnSanitizeHref(href), sanitizeHref(href));
 });
 
-test("meta frame mount is sandboxed and ignores other windows", () => {
-  const posted = [];
-  const iframe = {
-    style: {},
-    contentWindow: { postMessage(data, origin) { posted.push({ data, origin }); } },
-    setAttribute(k, v) { this[k] = v; },
+test("booking iframe outside the scheduler container is ignored", () => {
+  const env = setup();
+  env.controller.grant();
+  const outside = {
+    contentWindow: "other-win",
+    src: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn?embed=true",
+    closest: () => null,
   };
-  const listeners = [];
-  const api = createMetaFrame(
-    { addEventListener(type, fn) { listeners.push(fn); }, removeEventListener() {} },
-    { createElement() { return iframe; }, body: { appendChild() {} } },
-    { onFrameMessage(data) { posted.push({ fromFrame: data }); } }
-  );
-  assert.equal(iframe.sandbox, "allow-scripts");
-  assert.equal(iframe.referrerPolicy, "no-referrer");
-  assert.equal(String(iframe.sandbox).includes("allow-same-origin"), false);
-  listeners[0]({ source: iframe.contentWindow, origin: "null", data: { command: "ready" } });
-  listeners[0]({ source: {}, origin: "null", data: { command: "ready" } });
-  listeners[0]({ source: iframe.contentWindow, origin: "https://katchapmanrn.com", data: { command: "ready" } });
-  assert.equal(posted.filter((p) => p.fromFrame).length, 1);
-  api.post({ command: "boot", pixelId: TEST_PIXEL });
-  assert.equal(posted.at(-1).data.source, "kcrn-measure");
-  assert.equal(posted.at(-1).data.pixelId, TEST_PIXEL);
-  assert.equal(JSON.stringify(posted).includes("botox"), false);
+  assert.equal(env.controller.onBookingMessage({
+    origin: "https://meetings.hubspot.com",
+    source: "other-win",
+    data: { meetingBookSucceeded: true },
+  }, [outside]), false);
+  assert.equal(env.gtagCalls.filter((call) => call[1] === "booking_completed").length, 0);
 });
 
-test("banner states cover ask, deny, allow, and revoke", () => {
-  assert.equal(bannerModel("unset", true).mode, "ask");
+test("banner uses the humanized labels and the review file matches", () => {
+  assert.equal(bannerModel("unset", true).secondary, "keepOff");
   assert.equal(bannerModel("denied", false).mode, "reopen");
-  assert.equal(bannerModel("granted", true).secondary, "turnOff");
+  assert.equal(bannerModel("granted", true).secondary, "keepOff");
   assert.equal(bannerModel("denied", true).primary, "allow");
+  assert.doesNotMatch(COPY.body, /category and event name only|event name only/i);
   const review = fs.readFileSync(path.join(root, "measurement/CONSENT_COPY_FOR_REVIEW.md"), "utf8");
   for (const value of Object.values(COPY)) assert.match(review, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(review, /not approved for publication/i);
+  assert.match(review, /second humanizer pass/i);
   assert.doesNotMatch(review, /Chapman Med Spa|Med Spa/i);
+  const blog = fs.readFileSync(path.join(root, "measurement/HUBSPOT_BLOG_SNIPPET.html"), "utf8");
+  assert.doesNotMatch(blog, /src=["'][^"']*(googletagmanager|hs-scripts\.com)/);
+  assert.match(blog, /Do not add Google Analytics/);
+  const book = fs.readFileSync(path.join(root, "book.html"), "utf8");
+  assert.match(book, /meetings-iframe-container/);
+  assert.match(book, /Open the scheduler in a new tab/);
 });

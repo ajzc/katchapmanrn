@@ -21,7 +21,7 @@ export function mountBanner(doc, controller) {
     const view = bannerModel(controller.getConsent(), controller.isBannerOpen());
     doc.body.classList.toggle("measure-banner-open", view.mode !== "reopen");
     if (view.mode === "reopen") {
-      host.appendChild(button(doc, COPY.reopen, "kcrn-measure-reopen", "measure-reopen", () => {
+      host.appendChild(button(doc, COPY.privacySettings, "kcrn-measure-reopen", "measure-reopen", () => {
         controller.openBanner();
         render();
       }));
@@ -36,19 +36,9 @@ export function mountBanner(doc, controller) {
     title.className = "measure-title";
     title.textContent = COPY.heading;
     panel.appendChild(title);
-    if (view.mode === "granted" || view.mode === "denied") {
-      const status = doc.createElement("p");
-      status.textContent = view.mode === "granted" ? COPY.statusOn : COPY.statusOff;
-      panel.appendChild(status);
-    } else {
-      const body = doc.createElement("p");
-      body.textContent = COPY.body;
-      panel.appendChild(body);
-    }
-    const privacy = doc.createElement("a");
-    privacy.href = "/privacy";
-    privacy.textContent = COPY.privacy;
-    panel.appendChild(privacy);
+    const body = doc.createElement("p");
+    body.textContent = COPY.body;
+    panel.appendChild(body);
     const actions = doc.createElement("div");
     actions.className = "measure-actions";
     if (view.primary === "allow") {
@@ -57,19 +47,11 @@ export function mountBanner(doc, controller) {
         render();
       }));
     }
-    if (view.secondary === "decline") {
-      actions.appendChild(button(doc, COPY.decline, "kcrn-measure-decline", "measure-decline", () => {
-        controller.deny();
-        render();
-      }));
-    } else if (view.secondary === "turnOff") {
-      actions.appendChild(button(doc, COPY.turnOff, "kcrn-measure-turn-off", "measure-decline", () => {
-        controller.revoke();
-        render();
-      }));
-    } else if (view.secondary === "close") {
-      actions.appendChild(button(doc, COPY.close, "kcrn-measure-close", "measure-decline", () => {
-        controller.closeBanner();
+    if (view.secondary === "keepOff") {
+      const turnOff = controller.getConsent() === "granted";
+      actions.appendChild(button(doc, COPY.keepOff, turnOff ? "kcrn-measure-turn-off" : "kcrn-measure-decline", "measure-decline", () => {
+        if (turnOff) controller.revoke();
+        else controller.deny();
         render();
       }));
     }

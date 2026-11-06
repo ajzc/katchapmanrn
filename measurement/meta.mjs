@@ -1,35 +1,33 @@
-import { META_FRAME_PATH, META_SCRIPT_URL, REJECTED_IDS } from "./config.mjs";
+import { META_SCRIPT_URL } from "./config.mjs";
 
-const PIXEL_RE = /^[0-9]{15,16}$/;
 const META_NAMES = new Set(["PageView", "Lead", "Schedule", "OutboundClick"]);
 const LINK_KINDS = new Set(["call", "text", "book"]);
 
-/** True only for a pixel-shaped ID. Portal IDs, GA4 IDs, and blanks are rejected. */
+/**
+ * Meta's Google tag template validates a pixel ID as digits only (`^[0-9,]+$`).
+ * It does not publish a 15- or 16-digit rule. One pixel is initialized here, so
+ * commas (the template's multi-pixel form) are not accepted.
+ */
 export function isConfiguredPixelId(id) {
   if (typeof id !== "string") return false;
   const trimmed = id.trim();
-  if (!PIXEL_RE.test(trimmed)) return false;
-  if (REJECTED_IDS.has(trimmed)) return false;
-  return true;
+  return /^[0-9]+$/.test(trimmed);
 }
 
 export function metaInstallPlan(pixelId, consent) {
   if (!isConfiguredPixelId(pixelId)) return { load: false, reason: "missing_id" };
   if (consent !== "granted") return { load: false, reason: "consent_required" };
-  return { load: true, reason: "ready", frame: META_FRAME_PATH };
+  return { load: true, reason: "ready", script: META_SCRIPT_URL };
 }
 
-/**
- * Commands the isolated frame must run, in order, before any event.
- * init is the pixel ID only: no advanced-matching object.
- */
+/** init receives the pixel ID only: no advanced-matching object. */
 export function metaBootCommands(pixelId) {
   if (!isConfiguredPixelId(pixelId)) return [];
   return [
     ["consent", "revoke"],
-    ["set", "autoConfig", false, pixelId],
+    ["set", "autoConfig", false, pixelId.trim()],
     ["dataProcessingOptions", ["LDU"], 0, 0],
-    ["init", pixelId],
+    ["init", pixelId.trim()],
     ["consent", "grant"],
   ];
 }
@@ -60,4 +58,4 @@ export function cleanFrameTrack(message) {
   return { method: "track", name };
 }
 
-export { META_SCRIPT_URL, META_FRAME_PATH };
+export { META_SCRIPT_URL };

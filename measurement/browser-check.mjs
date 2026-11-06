@@ -20,6 +20,7 @@ const blocked = [
   "*hscollectedforms.net*",
   "*hs-banner.com*",
   "*usemessages.com*",
+  "*hsappstatic.net*",
   "*facebook.net*",
   "*facebook.com*",
   "*cloudflareinsights.com*",
@@ -146,56 +147,37 @@ async function main() {
     const search = await evaluate("location.search");
     check(search.includes("utm_campaign=lip-filler"), "safe utm should stay on the url");
     check(!search.includes("email="), "email query should be stripped before tags");
-    check(!search.includes("gclid="), "gclid should be stripped");
-    check(!search.includes("fbclid="), "fbclid should be stripped");
+    check(search.includes("gclid=CLICKID"), "click id should stay for attribution");
+    check(search.includes("fbclid=FB123"), "fbclid should stay for attribution");
+    check(await evaluate("document.getElementById('kcrn-measure-decline').textContent") === "Keep measurement off", "humanized decline label");
+    check(await evaluate("document.querySelector('.measure-banner p:last-of-type').textContent.indexOf('Submitted contact form details go to HubSpot') !== -1"), "banner states form details go to HubSpot");
     check(await evaluate("document.documentElement.dataset.measurementMeta") === "unconfigured", "meta dataset should be unconfigured");
-    check(await evaluate("!document.getElementById('kcrn-ga') && !document.getElementById('hs-script-loader') && !document.querySelector('iframe[src*=\"meta-frame\"]')"), "tags should not load before consent");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.getElementById('hs-script-loader') && !document.querySelector('script[src*=\"facebook\"]')"), "tags should not load before consent");
     const earlyAds = session.requests.filter((url) => /facebook|googletagmanager|google-analytics|hs-scripts|hubspot/i.test(url));
     check(earlyAds.length === 0, "ads hosts were requested before consent: " + earlyAds.join(", "));
 
     await evaluate("document.getElementById('kcrn-measure-allow').click()");
     await waitFor("!!document.getElementById('kcrn-ga') && !!document.getElementById('hs-script-loader')");
-    check(await evaluate("!document.querySelector('script[src*=\"facebook\"], iframe[src*=\"meta-frame\"]')"), "Meta should stay unloaded without a pixel id");
-    const frameProbe = await evaluate(`new Promise((resolve) => {
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('sandbox', 'allow-scripts');
-      iframe.referrerPolicy = 'no-referrer';
-      iframe.src = '/measurement/meta-frame.html?v=1';
-      const timer = setTimeout(() => resolve('timeout'), 4000);
-      window.addEventListener('message', function onMessage(event) {
-        if (event.source !== iframe.contentWindow) return;
-        clearTimeout(timer);
-        window.removeEventListener('message', onMessage);
-        resolve(JSON.stringify({ origin: event.origin, data: event.data, href: false }));
-      });
-      document.body.appendChild(iframe);
-    })`);
-    check(frameProbe !== "timeout", "sandboxed meta frame did not post ready");
-    if (frameProbe !== "timeout") {
-      const probed = JSON.parse(frameProbe);
-      check(probed.origin === "null", "sandboxed frame origin was " + probed.origin + ", parent only accepts null");
-      check(probed.data && probed.data.command === "ready" && probed.data.source === "kcrn-measure", "frame ready message mismatch");
-    }
-    check(!session.requests.some((url) => /facebook|fbevents/i.test(url)), "probing the frame loaded Meta without a pixel id");
+    check(await evaluate("!document.querySelector('script[src*=\"facebook\"]')"), "Meta should stay unloaded without a pixel id");
+    check(!session.requests.some((url) => /facebook|fbevents/i.test(url)), "a Meta request was made without a pixel id");
     const layer = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
     check(layer.includes("page_view"), "GA page_view should be queued");
-    check(layer.includes("/p/local"), "GA should get the neutral local category");
-    check(!/botox|lip-filler|patient@|gclid|fbclid/i.test(layer), "GA queue leaked page or campaign detail: " + layer);
+    check(layer.includes("/botox-huntersville"), "GA should record the real page path");
+    check(!layer.includes("patient@"), "GA queue included an email query value");
 
     await evaluate(`document.addEventListener('click', (event) => {
       const a = event.target.closest && event.target.closest('a[href]');
       if (a && (a.hasAttribute('data-book') || String(a.href).indexOf('meetings.hubspot.com') !== -1)) event.preventDefault();
     }, true); true`);
     await evaluate("document.querySelector('a[data-book]').click()");
-    const afterClick = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
-    check(afterClick.includes("outbound_click") && afterClick.includes("book"), "book click should be an outbound click");
-    check(!afterClick.includes("booking_completed"), "book click must not be a completed booking");
-    check(!afterClick.includes("Schedule"), "book click must not emit Schedule");
-    const hsq = await evaluate("JSON.stringify(window._hsq||[])");
-    check(hsq.includes("/track/book"), "HubSpot should still get the book intent path");
+    const afterSiteBook = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
+    check(!afterSiteBook.includes("booking_completed"), "same-site book control must not be a completed booking");
+    check(!afterSiteBook.includes("/track/book"), "same-site book control must not add a synthetic page view");
     const bookHref = await evaluate("document.querySelector('a[data-book]').href");
-    check(bookHref.includes("utm_campaign=lip-filler"), "meetings link should carry the safe utm");
-    check(!bookHref.includes("patient@") && !bookHref.includes("gclid"), "meetings link should not carry stripped ids");
+    check(bookHref.endsWith("/book"), "book controls open the same-site scheduler");
+    await evaluate(`var ext = document.createElement('a'); ext.href = 'https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn'; ext.id = 'ext-book'; document.body.appendChild(ext); ext.click(); true`);
+    const hsq = await evaluate("JSON.stringify(window._hsq||[])");
+    check(hsq.includes("/track/book"), "direct scheduler link still records book intent");
 
     await go("/contact.html");
     await evaluate(`window.__mode = 'fail'; window.__bodies = []; window.fetch = function (url, opts) {
@@ -225,7 +207,23 @@ async function main() {
     check(contactLayer.includes("generate_lead"), "successful form should emit one lead");
     check(!contactLayer.includes("qa-measurement@example.com"), "lead event leaked email");
     check(!contactLayer.includes("lip filler"), "lead event leaked message text");
-    check(!/facebook|fbevents/i.test(session.requests.join("\n")), "a Meta request was made without a pixel id");
+    await evaluate("localStorage.setItem('kcrn_measure_consent','denied')");
+    await go("/contact.html");
+    check(await evaluate("!document.getElementById('kcrn-ga')"), "refusing measurement must not load GA");
+    await evaluate(`window.__bodies = []; window.fetch = function (url, opts) {
+      if (String(url).indexOf('hsforms') !== -1) window.__bodies.push(String(opts && opts.body || ''));
+      return Promise.resolve({ ok: true, text: function () { return Promise.resolve('{}'); } });
+    }; true`);
+    await evaluate(`document.querySelector('[name=name]').value = 'Test Person';
+      document.querySelector('[name=email]').value = 'refused-measurement@example.com';
+      document.querySelector('[name=message]').value = 'message while measurement is off';
+      document.querySelector('form.contact-form').requestSubmit(); true`);
+    await waitFor("!!document.querySelector('.form-success')");
+    const refusedBody = await evaluate("window.__bodies.join('\\n')");
+    const refusedLayer = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
+    check(refusedBody.includes("refused-measurement@example.com"), "form must reach HubSpot when measurement is off");
+    check(!refusedLayer.includes("generate_lead"), "refused measurement must not emit a lead");
+    check(!refusedLayer.includes("refused-measurement@example.com"), "refused form email must not reach GA");
 
     await session.send("Page.addScriptToEvaluateOnNewDocument", {
       source: "try{localStorage.setItem('kcrn_measure_consent','denied')}catch(e){}",
@@ -237,11 +235,14 @@ async function main() {
     await evaluate("document.getElementById('kcrn-measure-allow').click()");
     await waitFor("!!document.getElementById('kcrn-ga')");
 
-    for (const page of ["/index.html", "/404.html", "/pricing.html"]) {
+    for (const page of ["/index.html", "/404.html", "/pricing.html", "/book.html"]) {
       await go(page);
       check(await evaluate("document.documentElement.dataset.measurementMeta") === "unconfigured", page + " meta status");
       check(await evaluate("!!document.querySelector('script[src*=\"script.js\"]')"), page + " shared script");
     }
+    check(await evaluate("!!document.querySelector('.meetings-iframe-container')"), "booking page should embed the scheduler");
+    check(await evaluate("!!document.getElementById('kcrn-meetings-embed')"), "official meetings embed script should load");
+    check(await evaluate("document.querySelector('.book-fallback a').href.indexOf('meetings.hubspot.com') !== -1"), "direct scheduler fallback remains");
   } finally {
     chrome.kill("SIGKILL");
     server.close();

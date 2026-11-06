@@ -1,11 +1,10 @@
 import { GA4_MEASUREMENT_ID, HS_PORTAL_ID, LINKER_DOMAINS, META_PIXEL_ID, CONSENT_STORAGE_KEY, UTM_STORAGE_KEY } from "./config.mjs";
-import { metaInstallPlan, metaTrackCommand } from "./meta.mjs";
+import { metaBootCommands, metaInstallPlan, metaTrackCommand, META_SCRIPT_URL } from "./meta.mjs";
 import { sanitizeHref, readAllowlistedUtms, mergeFirstTouch, appendUtms } from "./utm.mjs";
 import { buildHubSpotContext } from "./forms.mjs";
 import { bookingSignalFromMessage, matchingIframeSrc } from "./booking.mjs";
 import { classifyClick, pageViewEvent, clickEvent, formEvent, bookingEvent } from "./events.mjs";
 import { mountBanner } from "./banner.mjs";
-import { createMetaFrame } from "./meta-mount.mjs";
 
 function createOnce() {
   const seen = new Set();
@@ -45,10 +44,7 @@ export function createController(deps) {
   let consent = "unset";
   let bannerOpen = true;
   let tagsLoaded = false;
-  let frame = null;
-  let frameReady = false;
   let metaBooted = false;
-  const metaQueue = [];
   let utms = readJson(deps.session, UTM_STORAGE_KEY);
 
   function persistConsent() {
@@ -82,36 +78,28 @@ export function createController(deps) {
     if (!event.ga || !deps.gtag) return;
     deps.gtag("event", event.name, event.params || {});
   }
-  function ensureFrame() {
-    const plan = metaInstallPlan(pixelId, consent);
-    if (!plan.load || frame) return;
-    frame = deps.mountMetaFrame({
-      onFrameMessage(data) {
-        if (!data || data.source !== "kcrn-measure") return;
-        if (data.command === "ready") {
-          frameReady = true;
-          flushMeta();
-        }
-      },
-    });
-  }
-  function flushMeta() {
-    if (!frameReady || !frame) return;
-    if (!metaBooted) {
-      metaBooted = true;
-      frame.post({ command: "boot", pixelId: pixelId.trim() });
+  function bootMeta() {
+    if (!metaInstallPlan(pixelId, consent).load) return;
+    if (metaBooted) {
+      if (deps.fbq) deps.fbq("consent", "grant");
+      return;
     }
-    while (metaQueue.length) frame.post({ command: "track", ...metaQueue.shift() });
+    metaBooted = true;
+    if (deps.ensureFbq) deps.ensureFbq();
+    const fbq = deps.fbq;
+    if (!fbq) return;
+    fbq.disablePushState = true;
+    for (const command of metaBootCommands(pixelId)) fbq(...command);
+    deps.loadScript(META_SCRIPT_URL, { id: "kcrn-meta", referrerPolicy: "origin" });
   }
   function emitMeta(event) {
     if (!event.meta) return;
-    const plan = metaInstallPlan(pixelId, "granted");
-    if (!plan.load) return;
+    bootMeta();
+    if (!deps.fbq) return;
     const command = metaTrackCommand(event.name, event.params);
     if (!command) return;
-    metaQueue.push(command);
-    ensureFrame();
-    flushMeta();
+    if (command.params) deps.fbq(command.method, command.name, command.params);
+    else deps.fbq(command.method, command.name);
   }
   function emit(event) {
     if (!event || consent !== "granted") return false;
@@ -130,7 +118,7 @@ export function createController(deps) {
   function loadTags() {
     const page = location();
     const safe = pageViewEvent(page).params;
-    ensureFrame();
+    bootMeta();
     if (!tagsLoaded) {
       tagsLoaded = true;
       if (deps.ensureGtag) deps.ensureGtag();
@@ -216,16 +204,9 @@ export function createController(deps) {
       bannerOpen = false;
       persistConsent();
       once.clear();
-      metaQueue.length = 0;
-      metaBooted = false;
-      frameReady = false;
       if (tagsLoaded && deps.gtag) deps.gtag("consent", "update", { ...DENIED });
       if (tagsLoaded && deps.hsp) deps.hsp.push(["revokeCookieConsent"]);
-      if (frame) {
-        frame.post({ command: "revoke" });
-        if (frame.destroy) frame.destroy();
-        frame = null;
-      }
+      if (deps.fbq) deps.fbq("consent", "revoke");
       if (deps.clearMetaCookies) deps.clearMetaCookies();
       publish();
     },
@@ -318,9 +299,21 @@ export function attachMeasurement(window, document) {
         document.documentElement.dataset[name] = value;
       }
     },
-    mountMetaFrame(handlers) {
-      return createMetaFrame(window, document, handlers);
+    ensureFbq() {
+      if (window.fbq) return;
+      const fbq = function () {
+        if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
+        else fbq.queue.push(arguments);
+      };
+      fbq.push = fbq;
+      fbq.loaded = true;
+      fbq.version = "2.0";
+      fbq.queue = [];
+      fbq.disablePushState = true;
+      window.fbq = fbq;
+      window._fbq = fbq;
     },
+    get fbq() { return window.fbq; },
     clearMetaCookies() {
       document.cookie = "_fbp=; Max-Age=0; path=/";
       document.cookie = "_fbc=; Max-Age=0; path=/";

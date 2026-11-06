@@ -1,17 +1,20 @@
 /* ============================================================
    Kat Chapman, BSN, RN — shared behavior
    Query sanitizer runs before any other script on the page, including
-   the Cloudflare beacon that follows this file, so contact fields and
-   click IDs are not left on the URL.
+   the Cloudflare beacon that follows this file. It removes contact
+   fields from the query string and keeps the real path plus campaign
+   and click IDs.
    ============================================================ */
 
 function kcrnSanitizeHref(href) {
   var u;
   try { u = new URL(href); } catch (e) { return href; }
-  var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+  var utmKeys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+  var clickKeys = ["gclid", "gbraid", "wbraid", "fbclid", "msclkid"];
   var next = new URLSearchParams();
   u.searchParams.forEach(function (value, key) {
-    if (keys.indexOf(key) !== -1 && kcrnSafeUtm(value)) next.append(key, String(value).trim());
+    if (utmKeys.indexOf(key) !== -1 && kcrnSafeUtm(value)) next.append(key, String(value).trim());
+    else if (clickKeys.indexOf(key) !== -1 && kcrnSafeClickId(value)) next.append(key, value);
     else if (key === "_gl" && kcrnSafeGl(value)) next.append(key, value);
   });
   var search = next.toString();
@@ -28,6 +31,9 @@ function kcrnSafeUtm(value) {
 }
 function kcrnSafeGl(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 800 && /^[A-Za-z0-9._~\-]+$/.test(value);
+}
+function kcrnSafeClickId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9._~\-]+$/.test(value);
 }
 (function () {
   try {
@@ -50,7 +56,7 @@ var measurement = {
   },
   reportForm: function () {}
 };
-import("/measurement/controller.mjs?v=1").then(function (mod) {
+import("/measurement/controller.mjs?v=2").then(function (mod) {
   measurement = mod.attachMeasurement(window, document);
 }).catch(function () {});
 
@@ -61,7 +67,8 @@ document.documentElement.classList.add("js");
 /* >>> EDIT THESE IN ONE PLACE <<<
    Swap the placeholders below and every page updates. */
 const SITE_CONFIG = {
-  /* HubSpot Meetings (opens in a new tab). */
+  /* Same-site scheduler. The external URL remains the fallback. */
+  bookingPage: "/book",
   bookingUrl: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn",
   phone: "(704) 584-9785",
   phoneHref: "tel:+17045849785",
@@ -77,11 +84,11 @@ document.querySelectorAll(".site-footer a[data-instagram]").forEach(a => {
   a.rel = "noopener";
 });
 
-/* Apply config to all tagged elements */
+/* Tagged Book controls open the same-site scheduler. The direct HubSpot
+   link stays on /book as a fallback and is not rewritten. */
 document.querySelectorAll("[data-book]").forEach(el => {
-  el.href = SITE_CONFIG.bookingUrl;
-  el.target = "_blank";
-  el.rel = "noopener";
+  el.href = SITE_CONFIG.bookingPage;
+  el.removeAttribute("target");
 });
 document.querySelectorAll("[data-phone]").forEach(el => {
   el.href = SITE_CONFIG.phoneHref;
@@ -437,6 +444,33 @@ if (params.get("sent") === "1" && contactFormEl) {
   ok.innerHTML = "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.";
   contactFormEl.replaceWith(ok);
 }
+
+/* Official HubSpot Meetings embed. Loaded on the booking page only.
+   Marketing consent is not required to schedule. Ads events still wait
+   for Allow. Direct scheduler link on the page is the fallback. */
+(function mountMeetingsEmbed() {
+  var box = document.querySelector(".meetings-iframe-container");
+  if (!box || document.getElementById("kcrn-meetings-embed")) return;
+  try {
+    var u = new URL(box.getAttribute("data-src") || SITE_CONFIG.bookingUrl, location.origin);
+    var current = new URL(kcrnSanitizeHref(location.href));
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(function (key) {
+      var value = current.searchParams.get(key);
+      if (value && kcrnSafeUtm(value) && !u.searchParams.get(key)) u.searchParams.set(key, value.trim());
+    });
+    ["gclid", "gbraid", "wbraid", "fbclid", "msclkid"].forEach(function (key) {
+      var value = current.searchParams.get(key);
+      if (value && kcrnSafeClickId(value) && !u.searchParams.get(key)) u.searchParams.set(key, value);
+    });
+    if (!u.searchParams.get("embed")) u.searchParams.set("embed", "true");
+    box.setAttribute("data-src", u.toString());
+  } catch (e) {}
+  var s = document.createElement("script");
+  s.id = "kcrn-meetings-embed";
+  s.async = true;
+  s.src = "https://static.hsappstatic.net/MeetingsEmbed/ex/MeetingsEmbedCode.js";
+  document.body.appendChild(s);
+})();
 
 /* Launch strip leads every public page. Measure it so the fixed nav
    sits underneath instead of covering the offer. */

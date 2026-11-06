@@ -1,37 +1,29 @@
-# Consent and privacy copy — draft, not approved for publication
+# Consent copy for Copy Humanizer
 
-Humanizer review is required before this language is published. The banner currently uses the strings below so the choice can be tested. Do not treat this file as live site copy. `privacy.html` was not rewritten.
+The short banner below is the humanized draft now shown on the site. It is not permission to collect more than the field list. `privacy.html` was not rewritten.
 
-## Banner
+## Short banner, in use
 
-Heading: Measurement choices
+Privacy settings
 
-Body: Measurement stays off until you allow it. HubSpot can then record pages on Kat Chapman RN and connect a form you submit to that visit. Google, and Meta when a pixel is configured, receive a page category and event name only. They do not receive your name, message, appointment time, or which treatment page you opened. Book opens the scheduler. That click is not a completed booking.
+Measurement stays off until you allow it. With your permission, HubSpot can record pages you visit on Kat Chapman RN and connect a submitted form to that visit. Submitted contact form details go to HubSpot. Google, and Meta when a pixel is configured, receive measurement data. You can change your choice in Privacy settings.
 
 Allow measurement
 
-Not now
+Keep measurement off
 
-Turn measurement off
+Privacy settings
 
-Close
+"Privacy settings" is the button that reopens this choice. It is not a new settings page. The same "Keep measurement off" label is used before measurement starts and again after it was allowed.
 
-Measurement choices
+## Expanded disclosure — second humanizer pass required before publication
 
-Measurement is on in this browser.
+This list is what the code sends. It is not live privacy-page copy.
 
-Measurement is off in this browser.
+If you allow measurement, HubSpot's tracking code receives the page address you are on, including the path and the page title, and can tie a form you submit to that visit. The contact form sends HubSpot the name, email, phone, and message you typed even when measurement stays off. That form is not sent to Google or Meta.
 
-Privacy policy
+Google Analytics receives the page address after contact details are removed from the query string, the page title, and the referring address with its query string removed except campaign and click identifiers. It also receives event names and these details only: call, text, or book; a form id of contact or join; and, when HubSpot's scheduler confirms a visit on this site, that a booking was completed. It does not receive your name, email, phone, message, or appointment time as event details. The Google tag also uses its ordinary cookies and technical fields, such as a client id, session, language, and screen size. Advertising storage and Google signals stay off.
 
-## Suggested replacement for the privacy page section "Analytics and tracking"
+Meta, after a pixel ID is added and you allow measurement, receives a page view, a lead after a form succeeds, a schedule event only after HubSpot confirms a booking, and an outbound click marked call, text, or book. The pixel is loaded on the real page, so Meta's own script receives that page address and the referring address. This code does not give Meta your name, email, phone, message, or appointment time. Automatic button and form collection is turned off in the pixel call. Automatic advanced matching is not turned on by this code; it still has to be switched off in Events Manager.
 
-Do not publish until this draft is rewritten.
-
-Kat Chapman RN does not load Google Analytics or HubSpot analytics until you allow measurement in this browser. You can turn that choice off later. The choice is stored in this browser only.
-
-If you allow measurement, HubSpot records the pages you open on this site and can connect a form you submit to that visit. The form still sends HubSpot the name, email, phone, and message you typed, because that is the request you submitted. HubSpot Meetings, on HubSpot's own scheduler, receives what you enter there to book a visit.
-
-Google Analytics receives a page category, such as home, contact, or local, plus event names for a call, text, or book click, a successful form, and a completed booking only when HubSpot's scheduler confirms it. It does not receive your name, message, phone, appointment time, or the treatment page address. Meta, after a pixel is configured and you allow measurement, receives those same event names from a neutral measurement frame. It does not receive the treatment page address, your form text, or appointment details. Choosing Book is not a completed booking.
-
-Advertising measurement is off until a Meta pixel ID is added. Automatic advanced matching and automatic button or form collection are turned off in the pixel code. Appointment and treatment details are not sent to Google or Meta.
+A Book click opens the scheduler. It is not a completed booking. Choosing Keep measurement off stops later measurement. The contact form still submits to HubSpot.

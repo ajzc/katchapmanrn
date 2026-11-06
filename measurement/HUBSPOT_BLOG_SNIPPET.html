@@ -1,0 +1,53 @@
+<!--
+  Kat Chapman RN blog only. Parent pastes this once into the HubSpot blog template header
+  so every article inherits it. Do not paste it on katchapmanrn.com pages.
+
+  Do not add Google Analytics here. The blog's native HubSpot Google Analytics 4
+  integration already loads G-0BX0PK6GZP.
+  Do not add https://js.hs-scripts.com/22023986.js here. HubSpot pages already load it.
+
+  Leave META_PIXEL_ID empty until Events Manager supplies the same dataset ID
+  used in measurement/config.mjs. If HubSpot Ads is already injecting a Meta pixel,
+  delete this snippet instead of running two pixels.
+
+  This waits for HubSpot's privacy-consent listener. It does not add a second banner.
+  A granted analytics choice loads the pixel on the real blog URL. No form fields are passed.
+-->
+<script>
+(function () {
+  var META_PIXEL_ID = "";
+  if (!/^[0-9]+$/.test(META_PIXEL_ID)) return;
+  var started = false;
+  function boot() {
+    if (started) return;
+    started = true;
+    if (window.fbq) return;
+    var fbq = window.fbq = function () {
+      if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
+      else fbq.queue.push(arguments);
+    };
+    window._fbq = fbq;
+    fbq.push = fbq;
+    fbq.loaded = true;
+    fbq.version = "2.0";
+    fbq.queue = [];
+    fbq.disablePushState = true;
+    fbq("consent", "revoke");
+    fbq("set", "autoConfig", false, META_PIXEL_ID);
+    fbq("dataProcessingOptions", ["LDU"], 0, 0);
+    fbq("init", META_PIXEL_ID);
+    fbq("consent", "grant");
+    fbq("track", "PageView");
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = "https://connect.facebook.net/en_US/fbevents.js";
+    document.head.appendChild(script);
+  }
+  var _hsp = window._hsp = window._hsp || [];
+  _hsp.push(["addPrivacyConsentListener", function (consent) {
+    var analytics = consent && (consent.allowed === true || (consent.categories && consent.categories.analytics));
+    if (analytics) boot();
+    else if (window.fbq) window.fbq("consent", "revoke");
+  }]);
+})();
+</script>

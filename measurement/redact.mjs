@@ -1,4 +1,5 @@
-import { ADS_HOST, ADS_PAGE_TITLE } from "./config.mjs";
+import { ADS_HOST } from "./config.mjs";
+import { sanitizeHref } from "./utm.mjs";
 
 const CORE = new Map([
   ["/", "home"],
@@ -48,21 +49,28 @@ export function referrerOrigin(referrer) {
   }
 }
 
-/** Neutral hit for Google. The treatment path, title, and query string are not included. */
-export function redactForAds({ href, referrer }) {
-  let pathname = "/";
+/**
+ * Real page identity for Google and Meta. Personal query values are removed.
+ * The host and path stay, so the hit is not moved onto a stand-in URL.
+ */
+export function publicPageHit({ href, title, referrer }) {
+  let page_location = "https://" + ADS_HOST + "/";
   try {
-    pathname = new URL(href, "https://" + ADS_HOST).pathname;
+    page_location = sanitizeHref(new URL(href, "https://" + ADS_HOST).href);
   } catch {
-    pathname = "/";
+    page_location = "https://" + ADS_HOST + "/";
   }
-  const page_type = pageCategory(pathname);
   const out = {
-    page_title: ADS_PAGE_TITLE,
-    page_location: "https://" + ADS_HOST + "/p/" + page_type,
-    page_type,
+    page_location,
+    page_title: typeof title === "string" && title.trim() ? title.trim().slice(0, 300) : "Kat Chapman RN",
   };
-  const page_referrer = referrerOrigin(referrer);
-  if (page_referrer) out.page_referrer = page_referrer;
+  if (referrer) {
+    try {
+      const safeRef = sanitizeHref(new URL(referrer).href);
+      if (safeRef) out.page_referrer = safeRef;
+    } catch {
+      /* ignore a referrer that is not a URL */
+    }
+  }
   return out;
 }

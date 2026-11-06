@@ -25,9 +25,9 @@ export function bookingSignalFromMessage({ origin, data, iframeSrc }) {
 export function matchingIframeSrc(iframes, source) {
   if (!source || !iframes) return "";
   for (const frame of iframes) {
-    if (frame && frame.contentWindow === source) {
-      return frame.src || (frame.getAttribute && frame.getAttribute("src")) || "";
-    }
+    if (!frame || frame.contentWindow !== source) continue;
+    if (typeof frame.closest === "function" && !frame.closest(".meetings-iframe-container")) continue;
+    return frame.src || (frame.getAttribute && frame.getAttribute("src")) || "";
   }
   return "";
 }
