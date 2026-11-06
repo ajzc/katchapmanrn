@@ -2,7 +2,7 @@
 
 This directory is the replacement for the live worker captured as SHA-256 `39c6f399849a2018cb6dc10aa5cd629a61a138e919b91f2d85fa5382c5c36e89`. It is not deployed.
 
-The live script returns 302 for `/book` and `/book/` to HubSpot Meetings, serves an always-on Google/HubSpot/Meta script at `/js/main.js`, and removes `#consent`. This replacement does not. `/blog`, `/blog/`, and `/blog.html` still proxy `https://katchapmanrn.pages.dev/blog` with the same header edits. Every other path, including `/book` and `/js/main.js`, is fetched from the origin unchanged.
+The live script returns 302 for `/book` and `/book/` to HubSpot Meetings, serves an always-on Google/HubSpot/Meta script at `/js/main.js`, and removes `#consent`. This replacement does not. `/blog`, `/blog/`, and `/blog.html` still proxy `https://katchapmanrn.pages.dev/blog` with the same header edits. Every other path, including `/book` and `/js/main.js`, is fetched from the origin unchanged. HTML responses on those paths get a `kcrn-country` meta tag only when `request.cf.country` is a real two-letter code other than `XX` or `T1`. Missing or unknown geography adds no tag. The blog response is not tagged.
 
 ## Order
 

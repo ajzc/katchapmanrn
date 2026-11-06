@@ -42,7 +42,7 @@ export function clickEvent(kind) {
     once: null,
     conversion: false,
     ga: true,
-    meta: true,
+    meta: false,
     params: { link_kind: kind },
     hubspotPath: "/track/" + kind,
   };
@@ -56,7 +56,7 @@ export function formEvent(formId, ok, reason) {
       once: "lead:" + id,
       conversion: true,
       ga: true,
-      meta: true,
+      meta: false,
       params: { form_id: id, lead_source: "hubspot_form" },
     };
   }
@@ -76,7 +76,7 @@ export function bookingEvent() {
     once: "booking_completed",
     conversion: true,
     ga: true,
-    meta: true,
+    meta: false,
     params: { method: "hubspot_meetings_embed" },
   };
 }

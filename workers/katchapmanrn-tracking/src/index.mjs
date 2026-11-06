@@ -7,6 +7,30 @@
 
 const BLOG_UPSTREAM = "https://katchapmanrn.pages.dev/blog";
 
+export function trustedCountry(request) {
+  const cf = request && request.cf;
+  const fromCf = cf && typeof cf.country === "string" ? cf.country : null;
+  const raw = fromCf !== null ? fromCf : (request.headers.get("CF-IPCountry") || "");
+  const code = String(raw).trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code) || code === "XX" || code === "T1") return "";
+  return code;
+}
+
+export async function withCountryMeta(response, country) {
+  if (!country) return response;
+  const type = response.headers.get("content-type") || "";
+  if (!type.includes("text/html")) return response;
+  const html = await response.text();
+  if (html.includes('name="kcrn-country"')) {
+    return new Response(html, { status: response.status, headers: response.headers });
+  }
+  const tag = `<meta name="kcrn-country" content="${country}">`;
+  const body = html.includes("</head>") ? html.replace("</head>", tag + "</head>") : tag + html;
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(body, { status: response.status, headers });
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -24,6 +48,7 @@ export default {
       });
     }
 
-    return fetch(request);
+    const response = await fetch(request);
+    return withCountryMeta(response, trustedCountry(request));
   },
 };

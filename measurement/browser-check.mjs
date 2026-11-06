@@ -139,7 +139,7 @@ async function main() {
     }
     async function go(pathname) {
       await session.send("Page.navigate", { url: origin + pathname });
-      await waitFor("!!(document.getElementById('kcrn-measure-allow') || document.getElementById('kcrn-measure-reopen'))");
+      await waitFor("document.documentElement && document.documentElement.dataset && document.documentElement.dataset.measurementMeta === 'configured'");
     }
 
     const dirty = "/botox-huntersville.html?utm_campaign=lip-filler&email=patient@example.com&gclid=CLICKID&fbclid=FB123";
@@ -149,17 +149,14 @@ async function main() {
     check(!search.includes("email="), "email query should be stripped before tags");
     check(search.includes("gclid=CLICKID"), "click id should stay for attribution");
     check(search.includes("fbclid=FB123"), "fbclid should stay for attribution");
-    check(await evaluate("document.getElementById('kcrn-measure-decline').textContent") === "Keep measurement off", "humanized decline label");
-    check(await evaluate("document.querySelector('.measure-banner p:last-of-type').textContent.indexOf('Submitted contact form details go to HubSpot') !== -1"), "banner states form details go to HubSpot");
+    check(await evaluate("!document.getElementById('kcrn-measure-allow') && !document.querySelector('[role=dialog]')"), "no measurement popup");
     check(await evaluate("document.documentElement.dataset.measurementMeta") === "configured", "meta dataset id is configured");
-    check(await evaluate("!document.getElementById('kcrn-ga') && !document.getElementById('hs-script-loader') && !document.querySelector('script[src*=\"facebook\"]')"), "tags should not load before consent");
+    check(await evaluate("document.documentElement.dataset.measurementConsent") === "off", "unknown country keeps measurement off");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.getElementById('hs-script-loader') && !document.querySelector('script[src*=\"facebook\"]')"), "tags stay off without a US country");
     const earlyAds = session.requests.filter((url) => /facebook|googletagmanager|google-analytics|hs-scripts|hubspot/i.test(url));
-    check(earlyAds.length === 0, "ads hosts were requested before consent: " + earlyAds.join(", "));
-
-    await evaluate("document.getElementById('kcrn-measure-allow').click()");
-    await waitFor("!!document.getElementById('hs-script-loader')");
+    check(earlyAds.length === 0, "ads hosts were requested without a US country: " + earlyAds.join(", "));
     check(await evaluate("!document.getElementById('kcrn-ga')"), "treatment pages must not load Google");
-    check(await evaluate("!document.querySelector('script[src*=\"facebook\"]')"), "Meta should stay unloaded without a pixel id");
+    check(await evaluate("!document.querySelector('script[src*=\"facebook\"]')"), "Meta stays unloaded on a treatment page");
     check(!session.requests.some((url) => /facebook|fbevents|googletagmanager/i.test(url)), "an ad or analytics request was made from a treatment page");
     const layer = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
     check(!layer.includes("botox"), "treatment path reached the Google queue");
@@ -177,7 +174,7 @@ async function main() {
     check(bookHref.endsWith("/book"), "book controls open the same-site scheduler");
     await evaluate(`var ext = document.createElement('a'); ext.href = 'https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn'; ext.id = 'ext-book'; document.body.appendChild(ext); ext.click(); true`);
     const hsq = await evaluate("JSON.stringify(window._hsq||[])");
-    check(hsq.includes("/track/book"), "direct scheduler link still records book intent");
+    check(!hsq.includes("/track/book"), "measurement off does not record a synthetic book view");
 
     await go("/contact.html");
     await evaluate(`window.__mode = 'fail'; window.__bodies = []; window.fetch = function (url, opts) {
@@ -193,7 +190,7 @@ async function main() {
       document.querySelector('form.contact-form').requestSubmit(); true`);
     await waitFor("!!document.querySelector('.form-error')");
     let contactLayer = await evaluate("JSON.stringify((window.dataLayer||[]).map(item => Array.from(item)))");
-    check(contactLayer.includes("form_submit_failed"), "failed form should emit form_submit_failed");
+    check(!contactLayer.includes("form_submit_failed"), "a form page does not emit measurement events");
     check(!contactLayer.includes("generate_lead"), "failed form must not emit a lead");
     check(!contactLayer.includes("qa-measurement@example.com"), "failed form leaked email to GA");
     check(!contactLayer.includes("SENSITIVE_ERROR_TEXT"), "HubSpot error text leaked to GA");
@@ -204,7 +201,7 @@ async function main() {
     const posted = await evaluate("window.__bodies.join('\\n')");
     check(posted.includes("qa-measurement@example.com"), "HubSpot form body should keep the submitted email");
     check(posted.includes("lip filler appointment"), "HubSpot form body should keep the message");
-    check(contactLayer.includes("generate_lead"), "successful form should emit one lead");
+    check(!contactLayer.includes("generate_lead"), "a form page must not emit a lead");
     check(!contactLayer.includes("qa-measurement@example.com"), "lead event leaked email");
     check(!contactLayer.includes("lip filler"), "lead event leaked message text");
     await evaluate("localStorage.setItem('kcrn_measure_consent','denied')");
@@ -230,10 +227,7 @@ async function main() {
     });
     await go("/about.html");
     check(await evaluate("!document.getElementById('kcrn-ga')"), "denied consent should not load GA");
-    check(await evaluate("!!document.getElementById('kcrn-measure-reopen')"), "denied visitors need a way back to the choice");
-    await evaluate("document.getElementById('kcrn-measure-reopen').click()");
-    await evaluate("document.getElementById('kcrn-measure-allow').click()");
-    await waitFor("!!document.getElementById('kcrn-ga')");
+    check(await evaluate("!document.getElementById('kcrn-measure-allow')"), "denied visitors do not get an allow popup");
 
     for (const page of ["/index.html", "/404.html", "/pricing.html", "/book.html"]) {
       await go(page);
@@ -243,6 +237,27 @@ async function main() {
     check(await evaluate("!!document.querySelector('.meetings-iframe-container')"), "booking page should embed the scheduler");
     check(await evaluate("!!document.getElementById('kcrn-meetings-embed')"), "official meetings embed script should load");
     check(await evaluate("document.querySelector('.book-fallback a').href.indexOf('meetings.hubspot.com') !== -1"), "direct scheduler fallback remains");
+
+    await session.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "try{localStorage.removeItem('kcrn_measure_consent')}catch(e){}",
+    });
+    await session.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "(function(){var add=function(){if(!document.head||document.querySelector('meta[name=\"kcrn-country\"]'))return;var m=document.createElement('meta');m.setAttribute('name','kcrn-country');m.setAttribute('content','US');document.head.insertBefore(m, document.head.firstChild);};add();new MutationObserver(add).observe(document,{childList:true,subtree:true});})();",
+    });
+    await go("/about.html");
+    await waitFor("!!document.getElementById('kcrn-ga') && !!document.getElementById('kcrn-measure-turn-off')");
+    check(await evaluate("document.getElementById('kcrn-measure').innerText.indexOf('Google, HubSpot, and Meta measure this page. Opt out any time.') !== -1"), "US marketing page shows the measurement notice");
+    check(await evaluate("document.getElementById('kcrn-measure-turn-off').textContent") === "Keep measurement off", "opt-out label");
+    check(await evaluate("document.getElementById('kcrn-measure-privacy').getAttribute('href')") === "/privacy", "notice links to privacy");
+    check(await evaluate("!document.querySelector('#kcrn-measure [role=dialog]') && !document.getElementById('kcrn-measure-allow')"), "notice is not a consent popup");
+    check(await evaluate("!!document.querySelector('script[src*=\"facebook\"]')"), "Meta page view can load on a safe US page");
+    await go("/contact.html");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]') && !document.getElementById('kcrn-measure')"), "a US form page stays unmeasured");
+    await go("/botox-huntersville.html");
+    check(await evaluate("!document.getElementById('kcrn-ga') && !document.querySelector('script[src*=\"facebook\"]')"), "a US treatment page stays unmeasured");
+    await go("/gallery.html");
+    await waitFor("!!document.getElementById('kcrn-measure-turn-off')");
+    check(await evaluate("!!document.getElementById('kcrn-ga')"), "gallery can be measured for a US visitor");
   } finally {
     chrome.kill("SIGKILL");
     server.close();

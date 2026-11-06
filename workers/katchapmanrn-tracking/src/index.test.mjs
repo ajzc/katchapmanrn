@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import worker from "./index.mjs";
+import worker, { trustedCountry } from "./index.mjs";
 
 const source = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "index.mjs"), "utf8");
 const MEETINGS = "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn";
@@ -73,6 +73,30 @@ test("HTML keeps a consent banner and other paths are unchanged", async () => {
   }, async () => {
     const response = await worker.fetch(new Request("https://katchapmanrn.com/pricing"));
     assert.equal(await response.text(), html);
+  });
+});
+
+test("country meta is added only for a real country code", async () => {
+  assert.equal(trustedCountry({ cf: { country: "US" }, headers: { get: () => "GB" } }), "US");
+  assert.equal(trustedCountry({ cf: { country: "XX" }, headers: { get: () => "US" } }), "");
+  assert.equal(trustedCountry({ cf: { country: "T1" }, headers: { get: () => "US" } }), "");
+  assert.equal(trustedCountry({ headers: { get: () => "gb" } }), "GB");
+  assert.equal(trustedCountry({ headers: { get: () => "" } }), "");
+  const html = "<head><title>About</title></head><div id=\"consent\">Allow measurement</div>";
+  await withFetch(async () => new Response(html, {
+    status: 200,
+    headers: { "content-type": "text/html; charset=utf-8" },
+  }), async () => {
+    const us = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "US" } }));
+    const body = await us.text();
+    assert.match(body, /<meta name="kcrn-country" content="US">/);
+    assert.match(body, /id="consent"/);
+    const gb = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "GB" } }));
+    assert.match(await gb.text(), /content="GB"/);
+    const unknown = await worker.fetch(new Request("https://katchapmanrn.com/about", { headers: { "CF-IPCountry": "XX" } }));
+    const plain = await unknown.text();
+    assert.equal(plain.includes("kcrn-country"), false);
+    assert.match(plain, /id="consent"/);
   });
 });
 

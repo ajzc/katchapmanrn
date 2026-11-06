@@ -65,7 +65,7 @@ var measurement = {
   },
   reportForm: function () {}
 };
-import("/measurement/controller.mjs?v=2").then(function (mod) {
+import("/measurement/controller.mjs?v=3").then(function (mod) {
   measurement = mod.attachMeasurement(window, document);
 }).catch(function () {});
 

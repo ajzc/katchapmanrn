@@ -1,49 +1,41 @@
-# Consent copy
+# Measurement copy for Humanizer
 
-Short banner is unchanged:
+Status: NOT PUBLISHED. Do not copy these paragraphs into privacy.html until a Humanizer verdict approves them. privacy.html still has the old opt-in sentences. Those sentences are now inaccurate for the code in this branch.
 
-Measurement stays off until you allow it. With your permission, HubSpot can record pages you visit on Kat Chapman RN and connect a submitted form to that visit. Submitted contact form details go to HubSpot. Google, and Meta when a pixel is configured, receive measurement data. You can change your choice in Privacy settings.
+## Notice, shown only while measurement is on
 
-Allow measurement
+There is no consent popup and no Allow measurement button.
+
+Google, HubSpot, and Meta measure this page. Opt out any time.
 
 Keep measurement off
 
-Privacy settings
+Privacy
 
-## Published in privacy.html
+The Privacy control is a link to /privacy. Keep measurement off saves the opt-out and reloads the page.
 
-Google, Meta, and HubSpot measurement scripts stay off until you choose Allow measurement. Keep measurement off leaves them off. You can turn measurement off later in Privacy settings to stop future measurement.
+## Proposed replacement for the Analytics and tracking paragraphs in privacy.html
 
-Contact forms work separately. The name, email, phone number, and message you submit go to HubSpot even if measurement is off. With measurement allowed, HubSpot analytics can receive page URLs and titles and may connect your form submission to your visit.
+These five paragraphs would replace the five paragraphs under Analytics and tracking. They are not in privacy.html.
 
-Google Analytics and Meta do not load on treatment pages or receive treatment page URLs, titles, or referrers. On permitted pages, they can receive page URLs, titles, referrers, technical and cookie identifiers, and permitted campaign identifiers. We do not add your name, email, phone number, message, or appointment time to Google or Meta event data. Google ad storage and advertising signals stay off.
+On this site, Google Analytics, HubSpot analytics, and Meta measure visits from the United States on marketing pages that are not treatment, booking, consult, or form pages. Visitors outside the United States, and visits with no confirmed country, are not measured. A Global Privacy Control signal or a saved opt-out turns measurement off. There is no consent popup. A short notice with an opt-out appears only while measurement is on. This United States limit is a conservative choice. It is not a guarantee that the setup meets every privacy law.
 
-Meta loads only with your permission and a verified pixel ID. Automatic matching stays off.
+Contact forms work separately. The name, email, phone number, and message you submit go to HubSpot even if measurement is off. HubSpot analytics does not load on treatment, booking, consult, or form pages, and it does not connect those visits to a form.
 
-We measure page views, successful form submissions, and clicks to call, text, or book in HubSpot and, on permitted pages, in Google Analytics. A Book click is not a completed booking. We record a booking event only after the embedded scheduler confirms a booking. Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Whether Meta receives those two events is not confirmed.
+Google Analytics and Meta do not load on treatment, booking, consult, or form pages, or when the previous page or the address query names a treatment. On measured pages, they can receive page URLs, titles, referrers, technical and cookie identifiers, and permitted campaign identifiers. We do not add your name, email, phone number, message, or appointment time to Google or Meta event data. Google ad storage and advertising signals stay off.
 
-The scheduler works even if measurement is off.
+Meta loads only for a measured United States visit and a configured pixel ID. Automatic matching stays off. Meta receives a page view only. This site does not send form, booking, or procedure events to Meta.
 
-## Published on the booking page
+We measure page views on those marketing pages in HubSpot and Google Analytics. Clicks to call, text, or an external scheduler can be measured there too. A Book click is not a completed booking. Google Analytics records a booking event only after the embedded scheduler confirms a booking, and only if that page is being measured. Meta does not receive that booking event.
+
+## Unchanged booking copy, already on the site
+
+The scheduler works even if measurement is off. The scheduler is HubSpot Meetings. The name and contact details you enter there go to HubSpot to book the visit, and HubSpot sets cookies to run the scheduler. That is separate from measurement. HubSpot privacy notice: https://legal.hubspot.com/privacy-policy
 
 The scheduler is on this page. It works even if measurement is off.
 
 Open the scheduler in a new tab.
 
-## Not published — needs a follow-up humanizer pass
+## Still not a release
 
-The returned sentence "Automatic matching and automatic event collection stay off" is not published as a whole. Automatic matching is confirmed off in Events Manager. The automatic event detection control was not available before a website source existed, so this page does not claim that control is off. The code sets autoConfig to false. Recheck that setting after the pixel is connected to katchapmanrn.com.
-
-This sentence was added so the policy does not promise events Meta may block. It is not part of the returned draft:
-
-Meta may block the form event and the booking event under its health and wellness settings. This site does not rename those events or send them another way. Whether Meta receives those two events is not confirmed.
-
-This sentence was added because the scheduler is operational HubSpot, not measurement. It is not part of the returned draft:
-
-The scheduler is HubSpot Meetings. The name and contact details you enter there go to HubSpot to book the visit, and HubSpot sets cookies to run the scheduler. That is separate from measurement. HubSpot privacy notice: https://legal.hubspot.com/privacy-policy
-
-## Still conditional after this repo change
-
-The short banner says measurement stays off until Allow. That is true for Google, Meta, and HubSpot measurement in this repo after the manual Cloudflare beacon tags are removed. It stays false if Cloudflare Web Analytics automatic injection is still enabled. Dashboard path, from Cloudflare's Web Analytics get-started page: Web Analytics, the site card, Manage site, JS snippet setup, Disable. That option is documented as: the JS snippet will not be injected and has been disabled. Removing only the tags in this repo does not switch that control.
-
-Turning measurement off reloads the page after the denial is saved and in-progress contact fields are stored. The reload is what stops a script that already loaded. Consent updates alone are not treated as enough.
+This file is the follow-up humanizer pass. Do not deploy from this wording. Cloudflare country is read only from the worker. Until that worker is published after Pages, pages have no country and measurement stays off.

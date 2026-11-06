@@ -14,7 +14,7 @@ export const MEETINGS_PATH = "/ajchapman20/book-a-visit-kat-chapman-rn";
  * Automatic website matching was confirmed off in Events Manager.
  * Automatic event detection could not be checked before a website source existed.
  * The page sets autoConfig false. Do not add Conversions API.
- * Health and wellness classification may block Lead, Schedule, custom parameters, and URL parts.
+ * Lead, Schedule, and procedure events are not sent to Meta.
  */
 export const META_PIXEL_ID = "2738351096678050";
 

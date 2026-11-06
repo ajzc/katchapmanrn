@@ -2,6 +2,7 @@ import { GA4_MEASUREMENT_ID, HS_PORTAL_ID, LINKER_DOMAINS, META_PIXEL_ID, CONSEN
 import { metaBootCommands, metaInstallPlan, metaTrackCommand, META_SCRIPT_URL } from "./meta.mjs";
 import { sanitizeHref, readAllowlistedUtms, mergeFirstTouch, appendUtms } from "./utm.mjs";
 import { metaAudienceAllowed } from "./redact.mjs";
+import { measurementAllowed } from "./region.mjs";
 import { buildHubSpotContext } from "./forms.mjs";
 import { bookingSignalFromMessage, matchingIframeSrc } from "./booking.mjs";
 import { classifyClick, pageViewEvent, clickEvent, formEvent, bookingEvent } from "./events.mjs";
@@ -118,9 +119,18 @@ export function createController(deps) {
     return true;
   }
 
+  function regionOk() {
+    return measurementAllowed({
+      country: deps.country ? deps.country() : "",
+      gpc: !!(deps.gpc && deps.gpc()),
+      saved: deps.local.get(CONSENT_STORAGE_KEY),
+    });
+  }
+
   function loadTags() {
     const page = location();
     const view = pageViewEvent(page);
+    if (!view) return;
     if (metaAudienceAllowed(page)) bootMeta();
     if (!tagsLoaded) {
       tagsLoaded = true;
@@ -170,7 +180,6 @@ export function createController(deps) {
   function activate() {
     consent = "granted";
     bannerOpen = false;
-    persistConsent();
     publish();
     loadTags();
     const view = pageViewEvent(location());
@@ -180,21 +189,21 @@ export function createController(deps) {
   sanitize();
   captureUtms();
   const stored = deps.local.get(CONSENT_STORAGE_KEY);
-  if (stored === "granted") activate();
-  else if (stored === "denied") {
-    consent = "denied";
+  if (regionOk() && pageViewEvent(location())) activate();
+  else {
+    consent = (stored === "denied" || (deps.gpc && deps.gpc())) ? "denied" : "off";
     bannerOpen = false;
-    publish();
-  } else {
     publish();
   }
 
   return {
     getConsent() { return consent; },
+    isMeasuring() { return consent === "granted"; },
     isBannerOpen() { return bannerOpen; },
     openBanner() { bannerOpen = true; },
     closeBanner() { bannerOpen = false; },
     grant() {
+      if (!regionOk() || !pageViewEvent(location())) return;
       if (consent === "granted") {
         bannerOpen = false;
         return;
@@ -287,6 +296,13 @@ export function attachMeasurement(window, document) {
     metaPixelId: META_PIXEL_ID,
     local,
     session,
+    country() {
+      const meta = document.querySelector('meta[name="kcrn-country"]');
+      return meta ? meta.getAttribute("content") || "" : "";
+    },
+    gpc() {
+      return window.navigator && window.navigator.globalPrivacyControl === true;
+    },
     getLocation() {
       return {
         href: window.location.href,

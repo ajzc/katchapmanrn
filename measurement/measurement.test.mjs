@@ -12,7 +12,8 @@ import { buildHubSpotContext, submissionSucceeded, failureReason } from "./forms
 import { bookingSignalFromMessage } from "./booking.mjs";
 import { classifyClick } from "./events.mjs";
 import { createController } from "./controller.mjs";
-import { COPY, bannerModel } from "./copy.mjs";
+import { COPY, noticeModel } from "./copy.mjs";
+import { measurementAllowed } from "./region.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEST_PIXEL = "123456789012345";
@@ -70,6 +71,8 @@ function setup(overrides = {}) {
       loc = { ...loc, href, pathname: u.pathname, search: u.search };
     },
     getCookie: () => overrides.hutk || "",
+    country: () => overrides.country || "",
+    gpc: () => !!overrides.gpc,
     loadScript(url) { scripts.push(url); },
     gtag() { gtagCalls.push(Array.from(arguments)); },
     hsq,
@@ -125,23 +128,18 @@ test("Meta boot sequence disables auto events and advanced matching", () => {
   assert.deepEqual(commands[4], ["consent", "grant"]);
   assert.equal(metaBootCommands("").length, 0);
   assert.deepEqual(metaTrackCommand("page_view"), { method: "track", name: "PageView" });
-  assert.deepEqual(metaTrackCommand("generate_lead"), { method: "track", name: "Lead" });
-  assert.deepEqual(metaTrackCommand("booking_completed"), { method: "track", name: "Schedule" });
-  assert.deepEqual(metaTrackCommand("outbound_click", { link_kind: "book" }), {
-    method: "trackCustom",
-    name: "OutboundClick",
-    params: { link_kind: "book" },
-  });
+  assert.equal(metaTrackCommand("generate_lead"), null);
+  assert.equal(metaTrackCommand("booking_completed"), null);
+  assert.equal(metaTrackCommand("outbound_click"), null);
   assert.equal(metaTrackCommand("form_submit_failed"), null);
-  assert.deepEqual(cleanFrameTrack({
+  assert.equal(cleanFrameTrack({
     method: "trackCustom",
     name: "OutboundClick",
     params: { link_kind: "book", email: "a@b.com", page: "/botox-huntersville" },
-  }), { method: "trackCustom", name: "OutboundClick", params: { link_kind: "book" } });
-  assert.deepEqual(cleanFrameTrack({ method: "track", name: "Lead", params: { message: "lips" } }), {
-    method: "track",
-    name: "Lead",
-  });
+  }), null);
+  assert.equal(cleanFrameTrack({ method: "track", name: "Lead", params: { message: "lips" } }), null);
+  assert.equal(cleanFrameTrack({ method: "track", name: "Schedule" }), null);
+  assert.deepEqual(cleanFrameTrack({ method: "track", name: "PageView" }), { method: "track", name: "PageView" });
 });
 
 test("consent gates tags and keeps the real page address", () => {
@@ -161,39 +159,37 @@ test("consent gates tags and keeps the real page address", () => {
   assert.equal(env.hsq.length, 0);
 
   env.controller.grant();
-  assert.deepEqual(env.scripts, ["https://js.hs-scripts.com/22023986.js"]);
+  assert.deepEqual(env.scripts, []);
   assert.equal(env.gtagCalls.length, 0);
   assert.equal(env.fbqCalls.length, 0);
   const booked = { href: anchor.href, hasAttribute: () => true, setAttribute(k, v) { this.href = v; } };
   env.controller.handleAnchor(booked);
   assert.equal(env.gtagCalls.filter((c) => c[1] === "booking_completed").length, 0);
-  assert.deepEqual(env.hsq.map((entry) => entry[0] === "setPath" ? entry[1] : entry[0]), [
-    "/track/book", "trackPageView", "/botox-huntersville",
-  ]);
+  assert.equal(env.hsq.length, 0);
   const context = env.controller.buildFormContext("Botox TITLETOKEN");
-  assert.equal(context.hutk, "HUTKVALUE123");
+  assert.equal(context.hutk, undefined);
   assert.equal(context.pageName, "Botox TITLETOKEN");
   assert.equal("pageUri" in context, false);
-  assert.equal(env.controller.reportForm("contact", true), true);
+  assert.equal(env.controller.reportForm("contact", true), false);
   assert.equal(env.gtagCalls.length, 0);
 });
 
-test("neutral pages can use Google without copying a treatment referrer", () => {
+test("a US marketing page can use Google without copying a treatment referrer", () => {
   const env = setup({
+    country: "US",
     location: {
-      href: "https://katchapmanrn.com/contact?utm_source=instagram",
-      pathname: "/contact",
+      href: "https://katchapmanrn.com/about?utm_source=instagram",
+      pathname: "/about",
       search: "?utm_source=instagram",
-      title: "Contact Kat Chapman, BSN, RN",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
       referrer: "https://katchapmanrn.com/botox-huntersville",
     },
   });
-  env.controller.grant();
   assert.ok(env.scripts.includes("https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP"));
   assert.ok(env.scripts.includes("https://js.hs-scripts.com/22023986.js"));
   assert.equal(env.scripts.some((src) => src.includes("facebook")), false);
   const text = gaText(env.gtagCalls);
-  assert.match(text, /https:\/\/katchapmanrn\.com\/contact/);
+  assert.match(text, /https:\/\/katchapmanrn\.com\/about/);
   assert.equal(text.includes("botox"), false);
   assert.equal(text.includes("/botox-huntersville"), false);
   const config = env.gtagCalls.find((c) => c[0] === "config");
@@ -206,6 +202,7 @@ test("neutral pages can use Google without copying a treatment referrer", () => 
   const lead = env.gtagCalls.find((c) => c[1] === "generate_lead");
   assert.deepEqual(lead[2], { form_id: "contact", lead_source: "hubspot_form" });
   assert.equal(JSON.stringify(lead).includes("botox"), false);
+  assert.equal(JSON.stringify(env.fbqCalls).includes("Lead"), false);
 });
 
 test("denied consent still keeps the CRM form and omits the HubSpot cookie", () => {
@@ -225,28 +222,31 @@ test("denied consent still keeps the CRM form and omits the HubSpot cookie", () 
 });
 
 test("a supplied pixel id stays unloaded on a treatment page and its referrer", () => {
-  const blocked = setup({ pixelId: TEST_PIXEL });
+  const blocked = setup({ pixelId: TEST_PIXEL, country: "US" });
   blocked.controller.grant();
   assert.equal(blocked.scripts.some((src) => src.includes("facebook")), false);
+  assert.equal(blocked.scripts.includes("https://js.hs-scripts.com/22023986.js"), false);
   assert.equal(blocked.fbqCalls.length, 0);
   const fromTreatment = setup({
     pixelId: TEST_PIXEL,
+    country: "US",
     location: {
-      href: "https://katchapmanrn.com/contact",
-      pathname: "/contact",
+      href: "https://katchapmanrn.com/about",
+      pathname: "/about",
       search: "",
-      title: "Contact Kat Chapman, BSN, RN",
+      title: "Kat Chapman, BSN, RN in Huntersville, NC",
       referrer: "https://katchapmanrn.com/lip-filler-huntersville",
     },
   });
-  fromTreatment.controller.grant();
   assert.equal(fromTreatment.scripts.some((src) => src.includes("facebook")), false);
   assert.equal(gaText(fromTreatment.gtagCalls).includes("lip-filler"), false);
+  assert.equal(fromTreatment.gtagCalls.find((c) => c[0] === "config")[2].page_referrer, "https://katchapmanrn.com");
 });
 
-test("a supplied pixel id can load on a neutral page with a safe referrer", () => {
+test("a supplied pixel id can load on a US marketing page with a safe referrer", () => {
   const env = setup({
     pixelId: TEST_PIXEL,
+    country: "US",
     location: {
       href: "https://katchapmanrn.com/about",
       pathname: "/about",
@@ -256,25 +256,26 @@ test("a supplied pixel id can load on a neutral page with a safe referrer", () =
     },
   });
   assert.equal(env.dataset.measurementMeta, "configured");
-  env.controller.grant();
+  assert.equal(env.dataset.measurementConsent, "granted");
   assert.ok(env.scripts.includes("https://connect.facebook.net/en_US/fbevents.js"));
   const init = env.fbqCalls.find((call) => call[0] === "init");
   assert.deepEqual(init, ["init", TEST_PIXEL]);
   const page = env.fbqCalls.find((call) => call[1] === "PageView");
   assert.equal(page.length, 2);
   env.controller.handleAnchor({ href: "tel:+17045849785", hasAttribute: () => false, setAttribute() {} });
-  const click = env.fbqCalls.find((call) => call[1] === "OutboundClick");
-  assert.deepEqual(click[2], { link_kind: "call" });
+  assert.equal(env.fbqCalls.some((call) => call[1] === "OutboundClick" || call[1] === "Lead" || call[1] === "Schedule"), false);
+  assert.equal(env.gtagCalls.some((call) => call[1] === "outbound_click"), true);
   assert.equal(classifyClick("https://katchapmanrn.com/book", true), null);
   assert.equal(env.controller.onBookingMessage({
     origin: "https://meetings.hubspot.com",
     source: "frame-win",
     data: { meetingBookSucceeded: true, meetingsPayload: { email: "a@b.com", dateString: "2026-12-01" } },
   }, [{ contentWindow: "frame-win", src: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn?embed=true" }]), true);
-  const schedule = env.fbqCalls.find((call) => call[1] === "Schedule");
-  assert.deepEqual(schedule, ["track", "Schedule"]);
+  assert.equal(env.fbqCalls.some((call) => call[1] === "Schedule"), false);
+  assert.equal(env.gtagCalls.some((call) => call[1] === "booking_completed"), true);
   assert.equal(JSON.stringify(env.fbqCalls).includes("a@b.com"), false);
   assert.equal(JSON.stringify(env.fbqCalls).includes("2026-12-01"), false);
+  assert.equal(JSON.stringify(env.gtagCalls).includes("a@b.com"), false);
   env.controller.revoke();
   assert.equal(env.fbqCalls.at(-1)[0], "consent");
   assert.equal(env.fbqCalls.at(-1)[1], "revoke");
@@ -295,7 +296,7 @@ test("real pixel id is intercepted, excluded on treatment pages, and revoke relo
   assert.equal(treatment.scripts.length, 0);
   treatment.controller.grant();
   assert.equal(treatment.scripts.some((src) => /facebook|googletagmanager/.test(src)), false);
-  assert.equal(treatment.scripts.includes("https://js.hs-scripts.com/22023986.js"), true);
+  assert.equal(treatment.scripts.includes("https://js.hs-scripts.com/22023986.js"), false);
   const calls = JSON.stringify(treatment.fbqCalls);
   assert.equal(calls.includes("2738351096678050"), false);
   assert.equal(calls.includes("patient"), false);
@@ -304,6 +305,7 @@ test("real pixel id is intercepted, excluded on treatment pages, and revoke relo
   const local = mem();
   const allowed = setup({
     pixelId: META_PIXEL_ID,
+    country: "US",
     local,
     reload() { reloads += 1; },
     location: {
@@ -367,21 +369,29 @@ test("treatment pages produce no ad hit and neutral pages drop treatment referre
     title: "Lip filler in Mooresville | Kat Chapman RN",
     referrer: "https://www.google.com/search?q=lip+filler",
   }), null);
-  const hit = publicPageHit({
+  assert.equal(publicPageHit({
     href: "https://katchapmanrn.com/contact?utm_source=instagram",
     title: "Contact Kat Chapman, BSN, RN",
     referrer: "https://katchapmanrn.com/botox-huntersville",
-  });
-  assert.equal(hit.page_location, "https://katchapmanrn.com/contact?utm_source=instagram");
-  assert.equal(hit.page_referrer, "https://katchapmanrn.com");
-  assert.equal(JSON.stringify(hit).includes("botox"), false);
-  const faq = publicPageHit({
+  }), null);
+  assert.equal(publicPageHit({
+    href: "https://katchapmanrn.com/book",
+    title: "Book a visit | Kat Chapman RN",
+    referrer: "",
+  }), null);
+  assert.equal(publicPageHit({
     href: "https://katchapmanrn.com/faq",
     title: "Botox and Filler FAQ in Huntersville, NC",
     referrer: "",
+  }), null);
+  const hit = publicPageHit({
+    href: "https://katchapmanrn.com/about?utm_source=instagram",
+    title: "Kat Chapman, BSN, RN in Huntersville, NC",
+    referrer: "https://katchapmanrn.com/botox-huntersville",
   });
-  assert.equal(faq.page_location, "https://katchapmanrn.com/faq");
-  assert.equal(faq.page_title, "Kat Chapman RN");
+  assert.equal(hit.page_location, "https://katchapmanrn.com/about?utm_source=instagram");
+  assert.equal(hit.page_referrer, "https://katchapmanrn.com");
+  assert.equal(JSON.stringify(hit).includes("botox"), false);
 });
 
 test("HubSpot form context stays on supported fields", () => {
@@ -426,15 +436,56 @@ test("booking iframe outside the scheduler container is ignored", () => {
   assert.equal(env.gtagCalls.filter((call) => call[1] === "booking_completed").length, 0);
 });
 
-test("banner uses the humanized labels and the review file matches", () => {
-  assert.equal(bannerModel("unset", true).secondary, "keepOff");
-  assert.equal(bannerModel("denied", false).mode, "reopen");
-  assert.equal(bannerModel("granted", true).secondary, "keepOff");
-  assert.equal(bannerModel("denied", true).primary, "allow");
-  assert.doesNotMatch(COPY.body, /category and event name only|event name only/i);
+test("notice copy is unreviewed and the old opt-in claim stays out of the notice", () => {
+  assert.equal(noticeModel(true).mode, "notice");
+  assert.equal(noticeModel(false).mode, "off");
+  assert.equal(measurementAllowed({ country: "US", gpc: false, saved: null }), true);
+  assert.equal(measurementAllowed({ country: "us", gpc: false, saved: null }), true);
+  assert.equal(measurementAllowed({ country: "GB", gpc: false, saved: null }), false);
+  assert.equal(measurementAllowed({ country: "", gpc: false, saved: null }), false);
+  assert.equal(measurementAllowed({ country: "XX", gpc: false, saved: null }), false);
+  assert.equal(measurementAllowed({ country: "T1", gpc: false, saved: null }), false);
+  assert.equal(measurementAllowed({ country: "US", gpc: true, saved: null }), false);
+  assert.equal(measurementAllowed({ country: "US", gpc: false, saved: "denied" }), false);
+  assert.equal(measurementAllowed({ country: "US", gpc: false, saved: "granted" }), true);
+  const quiet = setup({ country: "DE", location: {
+    href: "https://katchapmanrn.com/about",
+    pathname: "/about",
+    search: "",
+    title: "Kat Chapman, BSN, RN in Huntersville, NC",
+    referrer: "",
+  } });
+  assert.equal(quiet.scripts.length, 0);
+  assert.equal(quiet.dataset.measurementConsent, "off");
+  const gpc = setup({ country: "US", gpc: true, location: quiet.loc });
+  assert.equal(gpc.scripts.length, 0);
+  assert.equal(gpc.dataset.measurementConsent, "denied");
+  const saved = setup({
+    country: "US",
+    local: mem({ [CONSENT_STORAGE_KEY]: "denied" }),
+    location: quiet.loc,
+  });
+  assert.equal(saved.scripts.length, 0);
+  assert.equal(saved.dataset.measurementConsent, "denied");
+  for (const pathname of ["/contact", "/book", "/services", "/pricing", "/faq"]) {
+    const excluded = setup({
+      country: "US",
+      location: {
+        href: "https://katchapmanrn.com" + pathname,
+        pathname,
+        search: "",
+        title: "Kat Chapman RN",
+        referrer: "",
+      },
+    });
+    assert.equal(excluded.scripts.length, 0, pathname);
+  }
+  assert.doesNotMatch(COPY.notice, /until you allow|Allow measurement|category and event name only/i);
   const review = fs.readFileSync(path.join(root, "measurement/CONSENT_COPY_FOR_REVIEW.md"), "utf8");
   for (const value of Object.values(COPY)) assert.match(review, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(review, /NOT PUBLISHED/);
   assert.match(review, /follow-up humanizer pass/i);
+  assert.match(fs.readFileSync(path.join(root, "privacy.html"), "utf8"), /until you choose Allow measurement/);
   assert.doesNotMatch(review, /Chapman Med Spa|Med Spa/i);
   const blog = fs.readFileSync(path.join(root, "measurement/HUBSPOT_BLOG_SNIPPET.html"), "utf8");
   assert.doesNotMatch(blog, /src=["'][^"']*(googletagmanager|hs-scripts\.com)/);

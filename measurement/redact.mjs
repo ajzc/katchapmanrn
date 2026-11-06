@@ -54,12 +54,20 @@ const NEUTRAL = new Set([
   "/faq", "/privacy", "/terms", "/book", "/404",
 ]);
 
+/** Marketing pages that are not treatment, booking, consult, or form pages. */
+const SAFE_MARKETING = new Set(["/", "/about", "/gallery", "/privacy", "/terms"]);
+
 /** Treatment words that must not appear in a Google or Meta field. */
 const TREATMENT = /botox|dysport|filler|injectable|rhinoplasty|sculptra|radiesse|nasolabial|jawline|neurotoxin|facial-balancing|dermal|under-eye|brow-lift|lip-flip|lip-filler|prp|temple-filler|cheek-filler/i;
 
 export function isNeutralPath(pathname) {
   const path = normalizePath(pathname).replace(/\.html$/, "");
   return NEUTRAL.has(path || "/");
+}
+
+export function isSafeMarketingPath(pathname) {
+  const path = normalizePath(pathname).replace(/\.html$/, "");
+  return SAFE_MARKETING.has(path || "/");
 }
 
 export function leaksTreatment(value) {
@@ -77,7 +85,7 @@ export function referrerForAds(referrer) {
   let u;
   try { u = new URL(referrer); } catch { return undefined; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
-  const unsafe = leaksTreatment(u.pathname) || leaksTreatment(u.search) || (ownHost(u.hostname) && !isNeutralPath(u.pathname));
+  const unsafe = leaksTreatment(u.pathname) || leaksTreatment(u.search) || (ownHost(u.hostname) && !isSafeMarketingPath(u.pathname));
   if (unsafe) return u.origin;
   return u.origin + u.pathname;
 }
@@ -90,7 +98,8 @@ export function referrerForAds(referrer) {
 export function publicPageHit({ href, title, referrer }) {
   let u;
   try { u = new URL(href, "https://" + ADS_HOST); } catch { return null; }
-  if (!isNeutralPath(u.pathname)) return null;
+  if (!isSafeMarketingPath(u.pathname) || leaksTreatment(u.pathname)) return null;
+  if (leaksTreatment(title)) return null;
   const clean = new URL(sanitizeHref(u.href));
   const kept = new URLSearchParams();
   for (const [key, value] of clean.searchParams.entries()) {
@@ -111,7 +120,7 @@ export function publicPageHit({ href, title, referrer }) {
 export function metaAudienceAllowed({ href, referrer }) {
   let u;
   try { u = new URL(href, "https://" + ADS_HOST); } catch { return false; }
-  if (!isNeutralPath(u.pathname)) return false;
+  if (!isSafeMarketingPath(u.pathname)) return false;
   if (leaksTreatment(u.pathname) || leaksTreatment(u.search)) return false;
   if (referrer && (leaksTreatment(referrer) || referrerNamesTreatmentPage(referrer))) return false;
   return true;
@@ -120,7 +129,7 @@ export function metaAudienceAllowed({ href, referrer }) {
 function referrerNamesTreatmentPage(referrer) {
   try {
     const u = new URL(referrer);
-    return ownHost(u.hostname) && !isNeutralPath(u.pathname);
+    return ownHost(u.hostname) && !isSafeMarketingPath(u.pathname);
   } catch {
     return true;
   }
