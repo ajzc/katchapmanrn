@@ -1,0 +1,3 @@
+# Module scripts must be served as JavaScript or the browser will not run them.
+/measurement/*.mjs
+  Content-Type: text/javascript; charset=utf-8

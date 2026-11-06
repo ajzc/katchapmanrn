@@ -1,40 +1,83 @@
 /* ============================================================
    Kat Chapman, BSN, RN — shared behavior
+   Query sanitizer runs before any other script on the page, including
+   the Cloudflare beacon that follows this file. It removes contact
+   fields from the query string and keeps the real path plus campaign
+   and click IDs.
    ============================================================ */
+
+function kcrnSanitizeHref(href) {
+  var u;
+  try { u = new URL(href); } catch (e) { return href; }
+  var utmKeys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
+  var clickKeys = ["gclid", "gbraid", "wbraid", "fbclid", "msclkid"];
+  var next = new URLSearchParams();
+  u.searchParams.forEach(function (value, key) {
+    if (utmKeys.indexOf(key) !== -1 && kcrnSafeUtm(value)) next.append(key, String(value).trim());
+    else if (clickKeys.indexOf(key) !== -1 && kcrnSafeClickId(value)) next.append(key, value);
+    else if (key === "_gl" && kcrnSafeGl(value)) next.append(key, value);
+  });
+  var search = next.toString();
+  return u.origin + u.pathname + (search ? "?" + search : "") + u.hash;
+}
+function kcrnSafeUtm(value) {
+  if (typeof value !== "string") return false;
+  var v = value.trim();
+  if (!v || v.length > 100) return false;
+  if (/[@<>"'`\\\r\n]/.test(v)) return false;
+  if (/https?:/i.test(v)) return false;
+  if (/\d{10,}/.test(v.replace(/\D/g, ""))) return false;
+  return /^[A-Za-z0-9 _.:~+\-|]+$/.test(v);
+}
+function kcrnSafeGl(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 800 && /^[A-Za-z0-9._~\-]+$/.test(value);
+}
+function kcrnSafeClickId(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 512 && /^[A-Za-z0-9._~\-]+$/.test(value);
+}
+(function () {
+  try {
+    var referrer = document.querySelector('meta[name="referrer"]');
+    if (!referrer) {
+      referrer = document.createElement("meta");
+      referrer.name = "referrer";
+      document.head.appendChild(referrer);
+    }
+    referrer.content = "origin";
+  } catch (e) {}
+  try {
+    var next = kcrnSanitizeHref(location.href);
+    if (next && next !== location.href) history.replaceState(null, "", next);
+  } catch (e) {}
+  var root = document.documentElement;
+  if (root && root.dataset) {
+    root.dataset.measurementGa = "G-0BX0PK6GZP";
+    root.dataset.measurementHs = "22023986";
+    root.dataset.measurementMeta = "unconfigured";
+  }
+})();
+
+var measurement = {
+  buildFormContext: function (pageName) {
+    var context = {};
+    if (pageName) context.pageName = String(pageName).slice(0, 256);
+    return context;
+  },
+  reportForm: function () {}
+};
+import("/measurement/controller.mjs?v=4").then(function (mod) {
+  measurement = mod.attachMeasurement(window, document);
+}).catch(function () {});
 
 /* Progressive enhancement flag: reveal animations only run with JS,
    so content is never gated on scripts loading. */
 document.documentElement.classList.add("js");
 
-/* Google Analytics 4 (G-0BX0PK6GZP)
-   Loaded here so every page that includes script.js is tracked. */
-(function () {
-  var s = document.createElement("script");
-  s.async = true;
-  s.src = "https://www.googletagmanager.com/gtag/js?id=G-0BX0PK6GZP";
-  document.head.appendChild(s);
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = function () { dataLayer.push(arguments); };
-  gtag("js", new Date());
-  gtag("config", "G-0BX0PK6GZP");
-})();
-
-/* HubSpot tracking (portal 22023986).
-   Enables analytics and ties form submissions to visitor sessions
-   via the hubspotutk cookie. Loaded for everyone; no cookie banner. */
-(function () {
-  var h = document.createElement("script");
-  h.async = true;
-  h.defer = true;
-  h.id = "hs-script-loader";
-  h.src = "https://js.hs-scripts.com/22023986.js";
-  document.head.appendChild(h);
-})();
-
 /* >>> EDIT THESE IN ONE PLACE <<<
    Swap the placeholders below and every page updates. */
 const SITE_CONFIG = {
-  /* HubSpot Meetings (opens in a new tab). */
+  /* Same-site scheduler. The external URL remains the fallback. */
+  bookingPage: "/book",
   bookingUrl: "https://meetings.hubspot.com/ajchapman20/book-a-visit-kat-chapman-rn",
   phone: "(704) 584-9785",
   phoneHref: "tel:+17045849785",
@@ -50,11 +93,11 @@ document.querySelectorAll(".site-footer a[data-instagram]").forEach(a => {
   a.rel = "noopener";
 });
 
-/* Apply config to all tagged elements */
+/* Tagged Book controls open the same-site scheduler. The direct HubSpot
+   link stays on /book as a fallback and is not rewritten. */
 document.querySelectorAll("[data-book]").forEach(el => {
-  el.href = SITE_CONFIG.bookingUrl;
-  el.target = "_blank";
-  el.rel = "noopener";
+  el.href = SITE_CONFIG.bookingPage;
+  el.removeAttribute("target");
 });
 document.querySelectorAll("[data-phone]").forEach(el => {
   el.href = SITE_CONFIG.phoneHref;
@@ -303,11 +346,6 @@ const HS_FORMS = {
   contact: "520f79d5-f010-4465-8a88-56b22f41ab0d"   // Website Contact
 };
 
-function hsCookie() {
-  const m = document.cookie.match(/hubspotutk=([^;]+)/);
-  return m ? m[1] : undefined;
-}
-
 /* Keep HubSpot's non-HubSpot-forms collector off these forms so the only
    record is the real HubSpot form submission (which sends notifications). */
 document.querySelectorAll("form.contact-form").forEach(f => f.setAttribute("data-hs-cf-bound", "true"));
@@ -323,18 +361,15 @@ function hsShowError(form, msg) {
   el.textContent = "Sorry, that didn't go through: " + msg + " Please try again.";
 }
 
-function hsSubmit(guid, fields, form, successHtml) {
+function hsSubmit(guid, fields, form, successHtml, formKind) {
   /* pageUri is deliberately NOT sent: HubSpot returns 200 but silently drops
      every v3 submission whose context.pageUri is on katchapmanrn.com
-     (verified 2026-10-20). pageName + hutk still give page and visitor context. */
+     (verified 2026-10-20). pageName + hutk still give page and visitor context.
+     hutk is attached only after measurement consent, inside buildFormContext. */
   const body = {
     fields: fields,
-    context: {
-      pageName: document.title,
-      hutk: hsCookie()
-    }
+    context: measurement.buildFormContext(document.title)
   };
-  if (!body.context.hutk) delete body.context.hutk; // API rejects an empty hutk
   const btn = form.querySelector("[type=submit]");
   if (btn) btn.disabled = true;
   // Portal 22023986 is NA (api-eu1 answers PORTAL_NOT_KNOWN), so api.hsforms.com is correct.
@@ -348,9 +383,12 @@ function hsSubmit(guid, fields, form, successHtml) {
     if (!r.ok || data.status === "error") {
       const detail = (data.errors && data.errors.length && data.errors.map(e => e.message).join(" ")) ||
         data.message || ("HubSpot error " + r.status + ".");
-      if (window.console) console.error("HubSpot form submit failed", r.status, t);
-      throw new Error(detail);
+      if (window.console) console.error("HubSpot form submit failed", r.status);
+      const err = new Error(detail);
+      err.reason = r.ok ? "rejected" : "network";
+      throw err;
     }
+    measurement.reportForm(formKind, true);
     const ok = document.createElement("div");
     ok.className = "form-success";
     ok.innerHTML = successHtml;
@@ -358,12 +396,13 @@ function hsSubmit(guid, fields, form, successHtml) {
     ok.scrollIntoView({ block: "center", behavior: "smooth" });
   })).catch(err => {
     if (btn) btn.disabled = false;
+    measurement.reportForm(formKind, false, (err && err.reason) || "network");
     hsShowError(form, (err && err.message) || "Network error.");
   });
 }
 
 const joinFormEl = document.getElementById("join");
-if (joinFormEl) {
+if (joinFormEl && joinFormEl.tagName === "FORM") {
   joinFormEl.addEventListener("submit", e => {
     e.preventDefault();
     const fd = new FormData(joinFormEl);
@@ -374,7 +413,7 @@ if (joinFormEl) {
       { objectTypeId: "0-1", name: "beauty_event_host_interest", value: fd.get("beauty_event") ? "true" : "false" }
     ];
     hsSubmit(HS_FORMS.join, fields, joinFormEl,
-      "<strong>Request received.</strong> Kat will be in touch to book your visit.");
+      "<strong>Request received.</strong> Kat will be in touch to book your visit.", "join");
   });
 }
 
@@ -393,12 +432,13 @@ if (contactFormEl && contactFormEl.querySelector("[name=message]")) {
           "\n\nWants a free consultation: " + (fd.get("consult_opt_in") ? "Yes" : "No") }
     ];
     hsSubmit(HS_FORMS.contact, fields, contactFormEl,
-      "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.");
+      "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.", "contact");
   });
 }
 
 /* Legacy fallback: thank-you states when returning from the native
-   (non-JS) submission path. */
+   (non-JS) submission path. These are not new submissions, so they
+   must not emit a lead event. */
 const params = new URLSearchParams(location.search);
 if (params.get("joined") === "1" && joinFormEl) {
   const ok = document.createElement("div");
@@ -413,6 +453,33 @@ if (params.get("sent") === "1" && contactFormEl) {
   ok.innerHTML = "<strong>Message sent.</strong> Kat reads every message and will get back to you soon.";
   contactFormEl.replaceWith(ok);
 }
+
+/* Official HubSpot Meetings embed. Loaded on the booking page only.
+   Marketing consent is not required to schedule. Ads events still wait
+   for Allow. Direct scheduler link on the page is the fallback. */
+(function mountMeetingsEmbed() {
+  var box = document.querySelector(".meetings-iframe-container");
+  if (!box || document.getElementById("kcrn-meetings-embed")) return;
+  try {
+    var u = new URL(box.getAttribute("data-src") || SITE_CONFIG.bookingUrl, location.origin);
+    var current = new URL(kcrnSanitizeHref(location.href));
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"].forEach(function (key) {
+      var value = current.searchParams.get(key);
+      if (value && kcrnSafeUtm(value) && !u.searchParams.get(key)) u.searchParams.set(key, value.trim());
+    });
+    ["gclid", "gbraid", "wbraid", "fbclid", "msclkid"].forEach(function (key) {
+      var value = current.searchParams.get(key);
+      if (value && kcrnSafeClickId(value) && !u.searchParams.get(key)) u.searchParams.set(key, value);
+    });
+    if (!u.searchParams.get("embed")) u.searchParams.set("embed", "true");
+    box.setAttribute("data-src", u.toString());
+  } catch (e) {}
+  var s = document.createElement("script");
+  s.id = "kcrn-meetings-embed";
+  s.async = true;
+  s.src = "https://static.hsappstatic.net/MeetingsEmbed/ex/MeetingsEmbedCode.js";
+  document.body.appendChild(s);
+})();
 
 /* Launch strip leads every public page. Measure it so the fixed nav
    sits underneath instead of covering the offer. */
@@ -451,24 +518,3 @@ document.querySelectorAll(".site-footer h4").forEach(h => {
     }
   }
 });
-/* HubSpot click tracking: call / text / book (portal 22023986).
-   Each tap is logged as a HubSpot page view of /track/call, /track/text or /track/book,
-   so counts show in HubSpot Traffic analytics > Pages with no extra HubSpot setup. */
-(function () {
-  document.addEventListener("click", function (e) {
-    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
-    if (!a) return;
-    var href = (a.getAttribute("href") || "").toLowerCase();
-    var type =
-      href.indexOf("tel:") === 0 ? "call" :
-      href.indexOf("sms:") === 0 ? "text" :
-      (a.hasAttribute("data-book") || href.indexOf("meetings.hubspot.com") !== -1) ? "book" :
-      null;
-    if (!type) return;
-    var back = location.pathname;
-    var _hsq = (window._hsq = window._hsq || []);
-    _hsq.push(["setPath", "/track/" + type]);
-    _hsq.push(["trackPageView"]);
-    _hsq.push(["setPath", back]);
-  }, true);
-})();

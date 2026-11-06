@@ -1,0 +1,101 @@
+<!--
+  Paste once into the HubSpot blog template header. Do not also enable HubSpot's
+  Meta pixel. Do not add a Google tag or js.hs-scripts.com. Native Google Analytics
+  on the blog is turned off in HubSpot, not by this file.
+  Pixel 2738351096678050. autoConfig is false. No Conversions API.
+  Meta loads only on / and /blog. No article path loads it. A first-party referrer
+  that is not / or /blog does not load it. A referrer with a query string does not
+  load it. An empty title or a title that contains a URL does not load it.
+  Revoke calls fbq consent revoke. If no form field has typed text, the page reloads.
+  Typed form text is not copied into storage. Allow after a revoke grants consent again.
+-->
+<script>
+(function () {
+  var META_PIXEL_ID = "2738351096678050";
+  var booted = false;
+
+  function normalizePath(pathname) {
+    var raw = String(pathname || "/").split("?")[0].split("#")[0];
+    var withSlash = raw.charAt(0) === "/" ? raw : "/" + raw;
+    if (withSlash.length > 1 && withSlash.charAt(withSlash.length - 1) === "/") return withSlash.slice(0, -1);
+    return withSlash || "/";
+  }
+  function isIndex(pathname) {
+    var path = normalizePath(pathname);
+    return path === "/" || path === "/blog";
+  }
+  function referrerBlocks(referrer) {
+    if (!referrer) return false;
+    var url;
+    try { url = new URL(referrer); } catch (e) { return true; }
+    if (url.search) return true;
+    var path = normalizePath(url.pathname);
+    var host = url.hostname.replace(/^www\./, "");
+    if (host === "katchapmanrn.com" || host === "blog.katchapmanrn.com") return !isIndex(path);
+    return path !== "/";
+  }
+  function titleBlocks(title) {
+    var text = String(title || "");
+    if (!text.trim()) return true;
+    if (/https?:/i.test(text)) return true;
+    return false;
+  }
+  function pageOk() {
+    if (location.search) return false;
+    if (!isIndex(location.pathname)) return false;
+    if (referrerBlocks(document.referrer || "")) return false;
+    if (titleBlocks(document.title)) return false;
+    return true;
+  }
+  function typedFormPresent() {
+    var fields = document.querySelectorAll("form input, form textarea, form select");
+    for (var i = 0; i < fields.length; i++) {
+      var el = fields[i];
+      var type = String(el.type || "").toLowerCase();
+      if (type === "hidden" || type === "submit" || type === "button" || type === "checkbox" || type === "radio") continue;
+      if (String(el.value || "").trim()) return true;
+    }
+    return false;
+  }
+  function allow() {
+    if (!pageOk()) return;
+    if (booted) {
+      if (window.fbq) window.fbq("consent", "grant");
+      return;
+    }
+    booted = true;
+    var fbq = window.fbq = function () {
+      if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
+      else fbq.queue.push(arguments);
+    };
+    window._fbq = fbq;
+    fbq.push = fbq;
+    fbq.loaded = true;
+    fbq.version = "2.0";
+    fbq.queue = [];
+    fbq.disablePushState = true;
+    fbq("consent", "revoke");
+    fbq("set", "autoConfig", false, META_PIXEL_ID);
+    fbq("dataProcessingOptions", ["LDU"], 0, 0);
+    fbq("init", META_PIXEL_ID);
+    fbq("consent", "grant");
+    fbq("track", "PageView");
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = "https://connect.facebook.net/en_US/fbevents.js";
+    document.head.appendChild(script);
+  }
+  function deny() {
+    if (window.fbq) window.fbq("consent", "revoke");
+    if (!booted) return;
+    if (typedFormPresent()) return;
+    location.reload();
+  }
+  var _hsp = window._hsp = window._hsp || [];
+  _hsp.push(["addPrivacyConsentListener", function (consent) {
+    var analytics = consent && (consent.allowed === true || (consent.categories && consent.categories.analytics));
+    if (analytics) allow();
+    else deny();
+  }]);
+})();
+</script>
